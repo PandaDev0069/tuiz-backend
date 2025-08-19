@@ -1,0 +1,26 @@
+// src/app.ts
+import express from 'express';
+import { corsMw } from './config/cors';
+import { errorMw } from './middleware/error';
+import health from './routes/health';
+
+export function createApp() {
+  const app = express();
+
+  // core middleware
+  app.use(corsMw);
+  app.use(express.json());
+
+  // routes
+  app.use('/health', health);
+
+  // 404 → unified error contract
+  app.use((_req, res) => {
+    res.status(404).json({ error: 'not_found', message: 'Route not found' });
+  });
+
+  // centralized errors
+  app.use(errorMw);
+
+  return app;
+}

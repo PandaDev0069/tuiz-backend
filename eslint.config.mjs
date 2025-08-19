@@ -33,6 +33,7 @@ export default [
     rules: {
       'no-console': 'warn',
       'import/order': ['error', { alphabetize: { order: 'asc', caseInsensitive: true } }],
+      'import/no-unresolved': 'off', // TypeScript handles this
       'n/no-missing-import': 'off',
       'n/no-unpublished-import': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
