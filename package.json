@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "lint-staged": {
+    "*.{ts,tsx,js,json,md,mdx}": [
+      "prettier --write"
+    ],
+    "*.{ts,tsx,js}": [
+      "eslint --max-warnings=0"
+    ]
+  },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc -p tsconfig.json",
@@ -11,15 +19,9 @@
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier . --check",
     "format:write": "prettier . --write",
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,json,md,mdx}": [
-      "prettier --write"
-    ],
-    "*.{ts,tsx,js}": [
-      "eslint --max-warnings=0"
-    ]
+    "prepare": "husky",
+    "test": "vitest --run",
+    "test:ui": "vitest --ui"
   },
   "engines": {
     "node": ">=22"
@@ -42,6 +44,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.0",
+    "@types/supertest": "^6.0.3",
     "eslint": "^9.33.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
@@ -50,8 +53,10 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.1.5",
     "prettier": "^3.6.2",
+    "supertest": "^7.1.4",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.2",
-    "typescript-eslint": "^8.40.0"
+    "typescript-eslint": "^8.40.0",
+    "vitest": "^3.2.4"
   }
 }
