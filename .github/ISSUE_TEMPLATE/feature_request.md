@@ -1,25 +1,20 @@
 ---
 name: Feature request
-about: Suggest an idea for tuiz-backend
-labels: enhancement
+about: Suggest an idea for this project
+title: ''
+labels: ''
+assignees: ''
+
 ---
 
-## Summary
+**Is your feature request related to a problem? Please describe.**
+A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
 
-What you want to add/change.
+**Describe the solution you'd like**
+A clear and concise description of what you want to happen.
 
-## Motivation
+**Describe alternatives you've considered**
+A clear and concise description of any alternative solutions or features you've considered.
 
-Why this is useful (DX, security, performance, product).
-
-## Proposal (API / Events)
-
-- HTTP endpoints (method, path, request/response)
-- Socket.IO (namespace, event names, payloads)
-
-## Acceptance Criteria
-
-- [ ]
-- [ ]
-
-## Notes / Out of Scope
+**Additional context**
+Add any other context or screenshots about the feature request here.
