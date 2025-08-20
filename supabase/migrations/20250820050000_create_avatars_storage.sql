@@ -87,6 +87,7 @@ CREATE OR REPLACE FUNCTION public.generate_avatar_path(user_id UUID, file_extens
 RETURNS TEXT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     file_uuid UUID;
@@ -113,6 +114,7 @@ CREATE OR REPLACE FUNCTION public.update_avatar_url(user_id UUID, storage_path T
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     avatar_url TEXT;
@@ -139,6 +141,7 @@ CREATE OR REPLACE FUNCTION public.remove_avatar(user_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
     -- Remove avatar URL from profile
@@ -163,6 +166,7 @@ CREATE OR REPLACE FUNCTION public.validate_avatar_file(
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 IMMUTABLE
+SET search_path = public
 AS $$
 BEGIN
     -- Check file size (5MB limit = 5242880 bytes)
@@ -185,7 +189,8 @@ END;
 $$;
 
 -- Step 4: Create a view for avatar management
-CREATE VIEW public.user_avatars AS
+CREATE VIEW public.user_avatars 
+SECURITY INVOKER AS
 SELECT 
     p.id as user_id,
     p.username,

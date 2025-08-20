@@ -96,7 +96,8 @@ CREATE POLICY "Admin can manage all profiles"
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = public
+SECURITY DEFINER 
+SET search_path = public
 AS $$
 DECLARE
     profile_display_name TEXT;
@@ -148,6 +149,7 @@ CREATE TRIGGER on_auth_user_created
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -160,8 +162,9 @@ CREATE TRIGGER on_profiles_updated
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
--- Step 10: Create read-only view for profile accounts with email
-CREATE VIEW public.profile_accounts AS
+-- Step 10: Create read-only view for profile accounts with email (authenticated only)
+CREATE VIEW public.profile_accounts 
+SECURITY INVOKER AS
 SELECT 
     p.id,
     p.username,
@@ -186,6 +189,7 @@ CREATE OR REPLACE FUNCTION public.soft_delete_profile(profile_id UUID)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
     UPDATE public.profiles 
@@ -201,6 +205,7 @@ CREATE OR REPLACE FUNCTION public.restore_profile(profile_id UUID)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
     UPDATE public.profiles 
@@ -216,6 +221,7 @@ CREATE OR REPLACE FUNCTION public.update_last_active(profile_id UUID)
 RETURNS VOID
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
     UPDATE public.profiles 
@@ -229,6 +235,7 @@ CREATE OR REPLACE FUNCTION public.is_username_available(check_username TEXT)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
     -- Check length and format
