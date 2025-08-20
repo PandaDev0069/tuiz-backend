@@ -1,11 +1,11 @@
 // src/config/env.ts
+import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Only load dotenv in development/test environments
 // In production, environment variables should be set by the platform
 if (process.env.NODE_ENV !== 'production') {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  require('dotenv').config();
+  dotenv.config();
 }
 
 const Env = z.object({
