@@ -1,0 +1,77 @@
+name: Verify Supabase migrations
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/db-migrations.yml'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Supabase CLI
+        run: npm i -g supabase@latest
+
+      # Supabase local stack uses Docker; this starts Postgres, Auth, Storage, etc.
+      - name: Start local Supabase
+        run: supabase start
+
+      # Apply all migrations to the local DB
+      - name: Apply migrations locally
+        run: supabase migration up
+
+      # Comment on PR when migrations succeed
+      - name: Comment on PR (Success)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: "✅ Supabase migrations applied successfully in CI (local stack)."
+            })
+
+      # Comment on PR when migrations fail
+      - name: Comment on PR (Failure)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: "❌ Supabase migrations failed in CI. Please check the workflow logs and fix any SQL errors."
+            })
+
+      # --- Optional: quick smoke tests against local Postgres ---
+      # Default local connection: host=localhost port=54322 user=postgres password=postgres db=postgres
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Smoke check table exists
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c \
+            "select table_schema, table_name from information_schema.tables where table_schema='app' and table_name='profiles';"
+
+      - name: Smoke check RLS enabled
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c \
+            "select relname as table, relrowsecurity from pg_class join pg_namespace n on n.oid = pg_class.relnamespace where n.nspname='app' and relname='profiles';"
+
+      # Always stop containers (helps release runner resources)
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop

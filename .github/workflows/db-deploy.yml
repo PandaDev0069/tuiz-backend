@@ -1,0 +1,33 @@
+name: Deploy DB (main)
+
+on:
+  push:
+    branches: ['main']
+    paths:
+      - 'supabase/**'
+      - '.github/workflows/db-deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        run: npm i -g supabase@latest
+
+      # Authenticate the CLI with a personal access token (scoped minimal)
+      - name: Link to project
+        run: supabase link --project-ref ${{ secrets.SB_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SB_ACCESS_TOKEN }}
+
+      - name: Push migrations to remote
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SB_ACCESS_TOKEN }}
