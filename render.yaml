@@ -3,8 +3,8 @@ services:
     name: tuiz-backend
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
-    startCommand: npm start
+    buildCommand: npm ci && npm run build && pwd && ls -la && ls -la dist/
+    startCommand: cd /opt/render/project/src && npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
