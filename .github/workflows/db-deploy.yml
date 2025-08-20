@@ -25,9 +25,9 @@ jobs:
 
       - name: Deploy migrations to remote database
         run: |
-          # Get the database URL from environment variables in your .env file
-          # We'll use the pooler connection which is recommended for migrations
-          DB_URL="postgresql://postgres.yxofjgxsjgtvgnefnhps:${{ secrets.SB_DB_PASSWORD }}@aws-0-ap-northeast-1.pooler.supabase.co:6543/postgres"
+          # Get the database URL with correct hostname
+          # Use the pooler connection which is recommended for migrations
+          DB_URL="postgresql://postgres.yxofjgxsjgtvgnefnhps:${{ secrets.SB_DB_PASSWORD }}@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
 
           echo "Deploying migrations to remote database..."
           supabase db push --db-url "$DB_URL" --include-all
