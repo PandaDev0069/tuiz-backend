@@ -1,8 +1,12 @@
 // src/config/env.ts
-import * as dotenv from 'dotenv';
 import { z } from 'zod';
 
-dotenv.config();
+// Only load dotenv in development/test environments
+// In production, environment variables should be set by the platform
+if (process.env.NODE_ENV !== 'production') {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('dotenv').config();
+}
 
 const Env = z.object({
   PORT: z.coerce.number().default(8080),
