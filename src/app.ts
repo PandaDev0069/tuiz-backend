@@ -11,6 +11,16 @@ export function createApp() {
   app.use(corsMw);
   app.use(express.json());
 
+  // welcome route
+  app.get('/', (req, res) => {
+    res.json({
+      message: 'Welcome to TUIZ Backend API',
+      version: '1.0.0',
+      status: 'running',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // routes
   app.use('/health', health);
 
