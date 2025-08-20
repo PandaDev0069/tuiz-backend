@@ -2,8 +2,12 @@
 -- Phase 1: Complete user profile schema with auth integration
 -- Created: 2025-08-20
 
--- Step 1: Create user_role enum type
-CREATE TYPE user_role AS ENUM ('player', 'host', 'admin');
+-- Step 1: Create user_role enum type (idempotent)
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('player', 'host', 'admin');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 -- Step 2: Create profiles table
 CREATE TABLE public.profiles (
@@ -11,7 +15,7 @@ CREATE TABLE public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     
     -- User identity fields
-    username VARCHAR(50) UNIQUE,
+    username VARCHAR(50), -- Uniqueness enforced by case-insensitive index below
     display_name VARCHAR(100),
     
     -- Role and permissions
@@ -57,6 +61,48 @@ CREATE POLICY "Users can update own profile"
     TO authenticated
     USING (auth.uid() = id)
     WITH CHECK (auth.uid() = id);
+
+-- Separate trigger to prevent role escalation and self soft-delete
+CREATE OR REPLACE FUNCTION public.prevent_sensitive_updates()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+BEGIN
+    -- Prevent role escalation (only admins can change roles)
+    IF OLD.role != NEW.role THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE id = auth.uid() 
+            AND role = 'admin' 
+            AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Only admins can change user roles';
+        END IF;
+    END IF;
+    
+    -- Prevent self soft-delete (only admins can soft delete)
+    IF OLD.deleted_at IS DISTINCT FROM NEW.deleted_at AND NEW.deleted_at IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM public.profiles 
+            WHERE id = auth.uid() 
+            AND role = 'admin' 
+            AND deleted_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Only admins can soft delete profiles';
+        END IF;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$;
+
+-- Create trigger for sensitive field protection
+DROP TRIGGER IF EXISTS on_profiles_sensitive_update ON public.profiles;
+CREATE TRIGGER on_profiles_sensitive_update
+    BEFORE UPDATE ON public.profiles
+    FOR EACH ROW 
+    EXECUTE FUNCTION public.prevent_sensitive_updates();
 
 -- INSERT (block): Profiles are created via trigger only, not directly
 CREATE POLICY "Block direct profile insertion" 
@@ -140,7 +186,8 @@ BEGIN
 END;
 $$;
 
--- Step 7: Create trigger for automatic profile creation
+-- Step 7: Create trigger for automatic profile creation (idempotent)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
@@ -157,7 +204,8 @@ BEGIN
 END;
 $$;
 
--- Step 9: Create trigger for updated_at timestamp
+-- Step 9: Create trigger for updated_at timestamp (idempotent)
+DROP TRIGGER IF EXISTS on_profiles_updated ON public.profiles;
 CREATE TRIGGER on_profiles_updated
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
@@ -254,6 +302,28 @@ BEGIN
 END;
 $$;
 
+-- Function to promote user to admin (server-only, requires service role key)
+-- ADMIN BOOTSTRAP: Use this function with service role key to create first admin
+-- Example: SELECT public.promote_to_admin('user-uuid-here');
+CREATE OR REPLACE FUNCTION public.promote_to_admin(user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- This function should only be called with service role key
+    -- Update the user's role to admin
+    UPDATE public.profiles 
+    SET 
+        role = 'admin',
+        updated_at = NOW()
+    WHERE id = user_id AND deleted_at IS NULL;
+    
+    RETURN FOUND;
+END;
+$$;
+
 -- Step 12: Add comments for documentation
 COMMENT ON TABLE public.profiles IS 'User profiles linked to auth.users with role-based access and soft delete support';
 COMMENT ON COLUMN public.profiles.id IS 'Primary key, references auth.users(id)';
@@ -283,6 +353,7 @@ GRANT EXECUTE ON FUNCTION public.is_username_available(TEXT) TO anon, authentica
 -- Profile management functions for authenticated users only
 GRANT EXECUTE ON FUNCTION public.update_last_active(UUID) TO authenticated;
 
--- Admin functions restricted to authenticated users (server-side role checking)
-GRANT EXECUTE ON FUNCTION public.soft_delete_profile(UUID) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.restore_profile(UUID) TO authenticated;
+-- Admin functions - NO GRANTS (server-side with service role key only)
+-- REVOKE EXECUTE ON FUNCTION public.soft_delete_profile(UUID) FROM authenticated;
+-- REVOKE EXECUTE ON FUNCTION public.restore_profile(UUID) FROM authenticated;
+-- REVOKE EXECUTE ON FUNCTION public.promote_to_admin(UUID) FROM authenticated;

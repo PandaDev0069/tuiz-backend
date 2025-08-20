@@ -2,21 +2,26 @@
 -- Phase 3: Avatar storage with public read, authenticated write
 -- Created: 2025-08-20
 
--- Step 1: Create the avatars bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'avatars',
-    'avatars',
-    true, -- Public read access
-    5242880, -- 5MB file size limit
-    ARRAY[
-        'image/jpeg',
-        'image/jpg', 
-        'image/png',
-        'image/webp',
-        'image/gif'
-    ]
-);
+-- Step 1: Create the avatars bucket (idempotent)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'avatars') THEN
+        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+        VALUES (
+            'avatars',
+            'avatars',
+            true, -- Public read access
+            5242880, -- 5MB file size limit
+            ARRAY[
+                'image/jpeg',
+                'image/jpg', 
+                'image/png',
+                'image/webp',
+                'image/gif'
+            ]
+        );
+    END IF;
+END $$;
 
 -- Step 2: Create storage policies for avatars bucket
 
@@ -117,18 +122,18 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-    avatar_url TEXT;
+    new_avatar_url TEXT; -- Renamed to avoid column shadowing
 BEGIN
-    -- Construct the full public URL for the avatar using the storage path
+    -- Store the storage path as the avatar URL
     -- The client will handle the full URL construction with their Supabase URL
-    avatar_url := storage_path;
+    new_avatar_url := storage_path;
     
     -- Update the user's profile with the new avatar URL
-    UPDATE public.profiles 
+    UPDATE public.profiles p
     SET 
-        avatar_url = avatar_url,
+        avatar_url = new_avatar_url,
         updated_at = NOW()
-    WHERE id = user_id AND deleted_at IS NULL;
+    WHERE p.id = user_id AND p.deleted_at IS NULL;
     
     IF NOT FOUND THEN
         RAISE EXCEPTION 'Profile not found or deleted for user: %', user_id;
