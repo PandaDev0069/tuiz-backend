@@ -1,3 +1,6 @@
+permissions:
+  contents: read
+  issues: write
 name: Verify Supabase migrations
 
 on:
