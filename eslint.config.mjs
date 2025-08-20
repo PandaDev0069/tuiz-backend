@@ -7,7 +7,7 @@ import prettier from 'eslint-config-prettier';
 
 export default [
   // 1) Ignore generated & config files so TS typed rules don't run on them
-  { ignores: ['dist/**', 'node_modules/**', '.husky/**', 'commitlint.config.cjs', 'eslint.config.mjs', 'index.js'] },
+  { ignores: ['dist/**', 'node_modules/**', '.husky/**', 'commitlint.config.cjs', 'eslint.config.mjs'] },
 
   // 2) Base JS recommendations (no type info required)
   js.configs.recommended,
