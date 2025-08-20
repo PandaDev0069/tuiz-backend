@@ -189,8 +189,7 @@ END;
 $$;
 
 -- Step 4: Create a view for avatar management
-CREATE VIEW public.user_avatars 
-SECURITY INVOKER AS
+CREATE VIEW public.user_avatars AS
 SELECT 
     p.id as user_id,
     p.username,

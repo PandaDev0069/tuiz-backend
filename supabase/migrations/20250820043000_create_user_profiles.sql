@@ -163,8 +163,7 @@ CREATE TRIGGER on_profiles_updated
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 -- Step 10: Create read-only view for profile accounts with email (authenticated only)
-CREATE VIEW public.profile_accounts 
-SECURITY INVOKER AS
+CREATE VIEW public.profile_accounts AS
 SELECT 
     p.id,
     p.username,
