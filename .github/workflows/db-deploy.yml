@@ -19,7 +19,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Supabase CLI
-        run: npm i -g supabase@latest
+        run: |
+          # Download and install the latest Supabase CLI binary
+          wget -qO supabase.tar.gz https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz
+          tar -xzf supabase.tar.gz
+          sudo mv supabase /usr/local/bin/supabase
+          sudo chmod +x /usr/local/bin/supabase
+          supabase --version
 
       # Authenticate the CLI with a personal access token (scoped minimal)
       - name: Link to project
