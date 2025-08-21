@@ -18,9 +18,11 @@ function createMockSupabaseClient() {
         listUsers: async () => ({ data: { users: [] }, error: null }),
         getUserById: async () => ({ data: null, error: { message: 'User not found in mock' } }),
         deleteUser: async () => ({ data: null, error: null }),
+        signOut: async () => ({ data: null, error: null }),
       },
       signInWithPassword: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),
       signOut: async () => ({ data: null, error: null }),
+      signUp: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),
     },
     from: () => ({
       select: () => ({
