@@ -5,6 +5,14 @@ import { createApp } from '../../src/app';
 import { supabaseAdmin } from '../../src/lib/supabase';
 import { createTestUser, cleanupTestUsers } from '../setup';
 
+interface TestUser {
+  email: string;
+  password: string;
+  username: string;
+  displayName: string;
+  uniqueId: string;
+}
+
 describe('Database - Profiles Integration', () => {
   const app = createApp();
   const createdUserIds: string[] = [];
@@ -17,6 +25,41 @@ describe('Database - Profiles Integration', () => {
     }
   });
 
+  // Helper function for aggressive cleanup
+  async function performParallelCleanup(userEmail: string) {
+    try {
+      const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const matchingUsers = allUsers.users.filter((u) => u.email === userEmail);
+      for (const user of matchingUsers) {
+        await supabaseAdmin.auth.admin.deleteUser(user.id);
+      }
+      if (matchingUsers.length > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Extended wait for parallel safety
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  // Helper function to register user and return userId
+  async function registerTestUser(testUser: TestUser) {
+    const registerResponse = await request(app).post('/auth/register').send({
+      email: testUser.email,
+      password: testUser.password,
+      username: testUser.username,
+      displayName: testUser.displayName,
+    });
+
+    if (registerResponse.status !== 201) {
+      console.log('Register failed in parallel profiles test:', registerResponse.body);
+      console.log('Test user data:', testUser);
+    }
+
+    expect(registerResponse.status).toBe(201);
+    expect(registerResponse.body).toHaveProperty('user');
+    return registerResponse.body.user.id;
+  }
+
   describe('Profile Database Operations', () => {
     it('should handle manual profile updates and RLS policies', async () => {
       // Use a truly unique test identifier with timestamp to avoid parallel conflicts
@@ -25,35 +68,10 @@ describe('Database - Profiles Integration', () => {
       );
 
       // More aggressive cleanup for parallel execution
-      try {
-        const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-        const matchingUsers = allUsers.users.filter((u) => u.email === testUser.email);
-        for (const user of matchingUsers) {
-          await supabaseAdmin.auth.admin.deleteUser(user.id);
-        }
-        if (matchingUsers.length > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 2000)); // Extended wait for parallel safety
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
+      await performParallelCleanup(testUser.email);
 
       // Create user via auth endpoint
-      const registerResponse = await request(app).post('/auth/register').send({
-        email: testUser.email,
-        password: testUser.password,
-        username: testUser.username,
-        displayName: testUser.displayName,
-      });
-
-      if (registerResponse.status !== 201) {
-        console.log('Register failed in parallel profiles test:', registerResponse.body);
-        console.log('Test user data:', testUser);
-      }
-
-      expect(registerResponse.status).toBe(201);
-      expect(registerResponse.body).toHaveProperty('user');
-      const userId = registerResponse.body.user.id;
+      const userId = await registerTestUser(testUser);
       createdUserIds.push(userId);
 
       // Enhanced parallel-safe profile checking with exponential backoff

@@ -5,6 +5,14 @@ import { createApp } from '../../src/app';
 import { supabaseAdmin } from '../../src/lib/supabase';
 import { createTestUser, cleanupTestUsers } from '../setup';
 
+interface TestUser {
+  email: string;
+  password: string;
+  username: string;
+  displayName: string;
+  uniqueId: string;
+}
+
 describe('Complete Auth Flow Integration', () => {
   const app = createApp();
   const createdUserIds: string[] = [];
@@ -17,13 +25,11 @@ describe('Complete Auth Flow Integration', () => {
     }
   });
 
-  it('should handle complete user journey: register → profile creation → login → logout', async () => {
-    const testUser = createTestUser('fulljourney');
-
-    // Ensure clean state - more aggressive cleanup for parallel execution
+  // Helper function for aggressive cleanup
+  async function performAggressiveCleanup(userEmail: string) {
     try {
       const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const matchingUsers = allUsers.users.filter((u) => u.email === testUser.email);
+      const matchingUsers = allUsers.users.filter((u) => u.email === userEmail);
       for (const user of matchingUsers) {
         await supabaseAdmin.auth.admin.deleteUser(user.id);
       }
@@ -33,8 +39,10 @@ describe('Complete Auth Flow Integration', () => {
     } catch {
       // Ignore cleanup errors
     }
+  }
 
-    // 1. Register user
+  // Helper function for user registration
+  async function registerUser(testUser: TestUser) {
     const registerResponse = await request(app).post('/auth/register').send({
       email: testUser.email,
       password: testUser.password,
@@ -46,7 +54,17 @@ describe('Complete Auth Flow Integration', () => {
     expect(registerResponse.body).toHaveProperty('user');
     expect(registerResponse.body).toHaveProperty('session');
 
-    const userId = registerResponse.body.user.id;
+    return registerResponse.body.user.id;
+  }
+
+  it('should handle complete user journey: register → profile creation → login → logout', async () => {
+    const testUser = createTestUser('fulljourney');
+
+    // Ensure clean state - more aggressive cleanup for parallel execution
+    await performAggressiveCleanup(testUser.email);
+
+    // 1. Register user
+    const userId = await registerUser(testUser);
     createdUserIds.push(userId);
 
     // 2. Verify profile was created automatically with enhanced parallel-safe retry logic
