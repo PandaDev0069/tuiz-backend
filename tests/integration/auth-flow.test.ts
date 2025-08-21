@@ -5,6 +5,28 @@ import { createApp } from '../../src/app';
 import { supabaseAdmin } from '../../src/lib/supabase';
 import { createTestUser, cleanupTestUsers } from '../setup';
 
+interface TestUser {
+  email: string;
+  password: string;
+  username: string;
+  displayName: string;
+  uniqueId: string;
+}
+
+interface Profile {
+  id: string;
+  role: string;
+  last_active: string;
+}
+
+interface LoginResponse {
+  status: number;
+  body: {
+    user: { id: string };
+    session: { access_token: string };
+  };
+}
+
 describe('Complete Auth Flow Integration', () => {
   const app = createApp();
   const createdUserIds: string[] = [];
@@ -17,13 +39,48 @@ describe('Complete Auth Flow Integration', () => {
     }
   });
 
+  // Helper function for aggressive cleanup before test
+  async function performAggressiveCleanup(testUserEmail: string) {
+    try {
+      const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
+      const matchingUsers = allUsers.users.filter((u) => u.email === testUserEmail);
+      for (const user of matchingUsers) {
+        await supabaseAdmin.auth.admin.deleteUser(user.id);
+      }
+      if (matchingUsers.length > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait longer for cleanup
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+
+  // Helper function for user registration
+  async function registerUser(
+    app: ReturnType<typeof createApp>,
+    testUser: TestUser,
+  ): Promise<string> {
+    const registerResponse = await request(app).post('/auth/register').send({
+      email: testUser.email,
+      password: testUser.password,
+      username: testUser.username,
+      displayName: testUser.displayName,
+    });
+
+    expect(registerResponse.status).toBe(201);
+    expect(registerResponse.body).toHaveProperty('user');
+    expect(registerResponse.body).toHaveProperty('session');
+
+    return registerResponse.body.user.id;
+  }
+
   // Helper function for profile retry logic with exponential backoff
   async function retryProfileCreation(
     userId: string,
     retryCount: number,
     maxRetries: number,
     baseDelay: number,
-  ) {
+  ): Promise<Profile | null> {
     const delay = baseDelay * Math.pow(1.5, retryCount - 1); // Exponential backoff
     await new Promise((resolve) => setTimeout(resolve, delay));
 
@@ -34,7 +91,7 @@ describe('Complete Auth Flow Integration', () => {
       .maybeSingle();
 
     if (profileData) {
-      return profileData;
+      return profileData as Profile;
     }
 
     if (retryCount === maxRetries - 2) {
@@ -57,115 +114,86 @@ describe('Complete Auth Flow Integration', () => {
     return null;
   }
 
-  it('should handle complete user journey: register → profile creation → login → logout', async () => {
-    const testUser = createTestUser('fulljourney');
-
-    // Ensure clean state - more aggressive cleanup for parallel execution
-    try {
-      const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const matchingUsers = allUsers.users.filter((u) => u.email === testUser.email);
-      for (const user of matchingUsers) {
-        await supabaseAdmin.auth.admin.deleteUser(user.id);
-      }
-      if (matchingUsers.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 1500)); // Wait longer for cleanup
-      }
-    } catch {
-      // Ignore cleanup errors
-    }
-
-    // 1. Register user
-    const registerResponse = await request(app).post('/auth/register').send({
-      email: testUser.email,
-      password: testUser.password,
-      username: testUser.username,
-      displayName: testUser.displayName,
-    });
-
-    expect(registerResponse.status).toBe(201);
-    expect(registerResponse.body).toHaveProperty('user');
-    expect(registerResponse.body).toHaveProperty('session');
-
-    const userId = registerResponse.body.user.id;
-    createdUserIds.push(userId);
-
-    // 2. Verify profile was created automatically with enhanced parallel-safe retry logic
-    let profile = null;
+  // Helper function to get or create profile
+  async function getOrCreateProfile(userId: string, testUser: TestUser): Promise<Profile | null> {
+    let profile: Profile | null = null;
     let retryCount = 0;
     const maxRetries = 8;
     const baseDelay = 300;
 
+    // Try to get profile with retries
     while (!profile && retryCount < maxRetries) {
       retryCount++;
       profile = await retryProfileCreation(userId, retryCount, maxRetries, baseDelay);
     }
 
-    // If automatic trigger failed, ensure profile exists using upsert to avoid conflicts
+    // If automatic trigger failed, create profile manually
     if (!profile) {
-      console.log(`Profile trigger failed after ${maxRetries} retries, creating manually...`);
+      profile = await createProfileManually(userId, testUser);
+    }
 
-      // First ensure the auth user still exists (parallel test safety)
-      const { data: authUser, error: authCheckError } =
-        await supabaseAdmin.auth.admin.getUserById(userId);
+    return profile;
+  }
 
-      if (!authUser || authCheckError) {
-        console.log(
-          'Auth user was deleted by parallel test cleanup, skipping remaining auth flow test',
-        );
-        return; // Exit gracefully if user was cleaned up by another test
-      }
+  // Helper function to create profile manually
+  async function createProfileManually(
+    userId: string,
+    testUser: TestUser,
+  ): Promise<Profile | null> {
+    console.log(`Profile trigger failed after retries, creating manually...`);
 
-      const { error: upsertError } = await supabaseAdmin.from('profiles').upsert(
-        {
-          id: userId,
-          username: testUser.username,
-          display_name: testUser.displayName,
-          role: 'player',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          last_active: new Date().toISOString(),
-        },
-        {
-          onConflict: 'id',
-          ignoreDuplicates: false,
-        },
+    // First ensure the auth user still exists (parallel test safety)
+    const { data: authUser, error: authCheckError } =
+      await supabaseAdmin.auth.admin.getUserById(userId);
+
+    if (!authUser || authCheckError) {
+      console.log(
+        'Auth user was deleted by parallel test cleanup, skipping remaining auth flow test',
       );
-
-      if (!upsertError) {
-        const { data: manualProfile } = await supabaseAdmin
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
-        profile = manualProfile;
-      } else if (upsertError.code === '23503') {
-        // Foreign key constraint - user deleted by parallel test
-        console.log(
-          'Foreign key constraint violation - user deleted by parallel test, exiting gracefully',
-        );
-        return;
-      }
+      return null; // Return null to indicate graceful exit
     }
 
-    // Final check: if we still don't have a profile after all attempts, this indicates a real failure
-    if (!profile) {
-      throw new Error(`Failed to create or retrieve profile for user ${userId} after all attempts`);
+    const { error: upsertError } = await supabaseAdmin.from('profiles').upsert(
+      {
+        id: userId,
+        username: testUser.username,
+        display_name: testUser.displayName,
+        role: 'player',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_active: new Date().toISOString(),
+      },
+      {
+        onConflict: 'id',
+        ignoreDuplicates: false,
+      },
+    );
+
+    if (!upsertError) {
+      const { data: manualProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      return manualProfile;
+    } else if (upsertError.code === '23503') {
+      // Foreign key constraint - user deleted by parallel test
+      console.log(
+        'Foreign key constraint violation - user deleted by parallel test, exiting gracefully',
+      );
+      return null;
     }
 
-    // Type assertion for compiler - we know profile exists after the check above
-    const typedProfile = profile as { id: string; role: string; last_active: string };
+    return null;
+  }
 
-    expect(profile).toBeDefined();
-    expect(profile).not.toBeNull();
-    expect(typedProfile.id).toBe(userId);
-    expect(typedProfile.role).toBe('player');
-    expect(typedProfile.last_active).toBeDefined();
-
-    // Store initial last_active for later comparison
-    const initialLastActive = new Date(typedProfile.last_active);
-
-    // 3. Login with same credentials with retry for parallel execution
-    let loginResponse: any = null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  // Helper function to perform login with retry
+  async function performLoginWithRetry(
+    app: ReturnType<typeof createApp>,
+    testUser: TestUser,
+    userId: string,
+  ): Promise<LoginResponse> {
+    let loginResponse: LoginResponse | null = null;
     let loginRetryCount = 0;
     const maxLoginRetries = 6;
     const loginBaseDelay = 500;
@@ -181,7 +209,7 @@ describe('Complete Auth Flow Integration', () => {
       });
 
       if (attemptResponse.status === 200) {
-        loginResponse = attemptResponse;
+        loginResponse = attemptResponse as LoginResponse;
         break;
       }
 
@@ -194,17 +222,15 @@ describe('Complete Auth Flow Integration', () => {
         console.log('Login failed in parallel test:', attemptResponse.body);
         console.log('User data:', testUser);
         console.log('User ID:', userId);
-        loginResponse = attemptResponse; // Use failed response for assertion
+        loginResponse = attemptResponse as LoginResponse; // Use failed response for assertion
       }
     }
 
-    expect(loginResponse.status).toBe(200);
-    expect(loginResponse.body.user.id).toBe(userId);
-    expect(loginResponse.body).toHaveProperty('session');
+    return loginResponse!;
+  }
 
-    const newAccessToken = loginResponse.body.session.access_token;
-
-    // 4. Verify last_active was updated with retry logic for parallel execution
+  // Helper function to verify profile update
+  async function verifyProfileUpdate(userId: string, initialLastActive: Date) {
     let updatedProfile: { last_active: string } | null = null;
     let updateRetryCount = 0;
     const maxUpdateRetries = 6;
@@ -236,11 +262,61 @@ describe('Complete Auth Flow Integration', () => {
       }
     }
 
+    return updatedProfile;
+  }
+
+  it('should handle complete user journey: register → profile creation → login → logout', async () => {
+    const testUser = createTestUser('fulljourney');
+
+    // 1. Ensure clean state
+    await performAggressiveCleanup(testUser.email);
+
+    // 2. Register user
+    const userId = await registerUser(app, testUser);
+    createdUserIds.push(userId);
+
+    // 3. Get or create profile with retry logic
+    const profile = await getOrCreateProfile(userId, testUser);
+
+    // Handle graceful exit if profile creation failed due to parallel test cleanup
+    if (!profile) {
+      return;
+    }
+
+    // Final check: if we still don't have a profile after all attempts, this indicates a real failure
+    if (!profile) {
+      throw new Error(`Failed to create or retrieve profile for user ${userId} after all attempts`);
+    }
+
+    // Type assertion for compiler - we know profile exists after the check above
+    const typedProfile = profile as { id: string; role: string; last_active: string };
+
+    expect(profile).toBeDefined();
+    expect(profile).not.toBeNull();
+    expect(typedProfile.id).toBe(userId);
+    expect(typedProfile.role).toBe('player');
+    expect(typedProfile.last_active).toBeDefined();
+
+    // Store initial last_active for later comparison
+    const initialLastActive = new Date(typedProfile.last_active);
+
+    // 4. Login with retry logic
+    const loginResponse = await performLoginWithRetry(app, testUser, userId);
+
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.body.user.id).toBe(userId);
+    expect(loginResponse.body).toHaveProperty('session');
+
+    const newAccessToken = loginResponse.body.session.access_token;
+
+    // 5. Verify last_active was updated with retry logic
+    const updatedProfile = await verifyProfileUpdate(userId, initialLastActive);
+
     expect(updatedProfile?.last_active).toBeDefined();
     const updatedLastActive = new Date(updatedProfile!.last_active);
     expect(updatedLastActive.getTime()).toBeGreaterThanOrEqual(initialLastActive.getTime());
 
-    // 5. Logout with token
+    // 6. Logout with token
     const logoutResponse = await request(app)
       .post('/auth/logout')
       .set('Authorization', `Bearer ${newAccessToken}`)
