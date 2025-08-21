@@ -1,6 +1,7 @@
 permissions:
   contents: read
   issues: write
+  pull-requests: write
 name: Verify Supabase migrations
 
 on:
@@ -35,31 +36,41 @@ jobs:
       - name: Apply migrations locally
         run: supabase migration up
 
-      # Comment on PR when migrations succeed
+      # Comment on PR when migrations succeed (optional - don't fail if commenting fails)
       - name: Comment on PR (Success)
-        if: success()
+        if: success() && github.event_name == 'pull_request'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: "✅ Supabase migrations applied successfully in CI (local stack)."
-            })
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: "✅ Supabase migrations applied successfully in CI (local stack)."
+              });
+            } catch (error) {
+              console.log('Could not comment on PR:', error.message);
+            }
 
-      # Comment on PR when migrations fail
+      # Comment on PR when migrations fail (optional - don't fail if commenting fails)
       - name: Comment on PR (Failure)
-        if: failure()
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
-            github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: "❌ Supabase migrations failed in CI. Please check the workflow logs and fix any SQL errors."
-            })
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: "❌ Supabase migrations failed in CI. Please check the workflow logs and fix any SQL errors."
+              });
+            } catch (error) {
+              console.log('Could not comment on PR:', error.message);
+            }
 
       # --- Optional: quick smoke tests against local Postgres ---
       # Default local connection: host=localhost port=54322 user=postgres password=postgres db=postgres
