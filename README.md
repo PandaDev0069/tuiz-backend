@@ -89,8 +89,23 @@ All non-2xx responses follow this minimal shape:
 
 ## 🧪 Testing
 
-- Unit/integration with Vitest + Supertest (planned)
-- App factory pattern enables HTTP testing without network
+Comprehensive test suite with Vitest + real Supabase integration:
+
+```bash
+npm test                              # Run all tests (18+ tests)
+npm test -- tests/auth.test.ts        # Auth routes only (11 tests)
+npm test -- tests/database/           # Database integration tests (4 tests)
+npm test -- tests/integration/        # End-to-end flows (3 tests)
+npm run test:ui                       # Interactive test UI
+```
+
+**Test Coverage:**
+
+- ✅ Authentication API with real Supabase Auth
+- ✅ Database profile creation & triggers
+- ✅ Complete user journeys (register → login → logout)
+- ✅ Error contract validation
+- ✅ RLS policy & security testing
 
 ## 📄 License
 
