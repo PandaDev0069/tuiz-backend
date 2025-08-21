@@ -2,6 +2,7 @@
 import { beforeAll, afterAll } from 'vitest';
 import { supabaseAdmin } from '../src/lib/supabase';
 import { logger } from '../src/utils/logger';
+import { isTestWithDummyCredentials } from '../src/config/env';
 
 // Generate unique test user data for each test run to avoid conflicts
 export function createTestUser(suffix: string = '') {
@@ -41,6 +42,11 @@ export const TEST_USER_2 = {
 
 // Enhanced cleanup function that can target specific users or clean all test users
 export async function cleanupTestUsers(specificUserIds: string[] = []) {
+  // Skip cleanup in CI with dummy credentials
+  if (isTestWithDummyCredentials) {
+    return;
+  }
+
   try {
     // Get test users by email
     const { data: users, error } = await supabaseAdmin.auth.admin.listUsers();

@@ -8,6 +8,16 @@ if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
 
+// Check if we're in a CI environment without Supabase credentials
+const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
+const isTest = process.env.NODE_ENV === 'test';
+
+// Provide fallback values for CI/test environments
+const supabaseUrl = isCI && isTest ? 'https://dummy.supabase.co' : process.env.SUPABASE_URL;
+const supabaseAnonKey = isCI && isTest ? 'dummy-anon-key-for-ci' : process.env.SUPABASE_ANON_KEY;
+const supabaseServiceRoleKey =
+  isCI && isTest ? 'dummy-service-role-key-for-ci' : process.env.SUPABASE_SERVICE_ROLE_KEY;
+
 const Env = z.object({
   PORT: z.coerce.number().default(8080),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -23,8 +33,14 @@ const Env = z.object({
   SOCKET_PATH: z.string().default('/socket.io'),
 });
 
-export const env = Env.parse(process.env);
+export const env = Env.parse({
+  ...process.env,
+  SUPABASE_URL: supabaseUrl,
+  SUPABASE_ANON_KEY: supabaseAnonKey,
+  SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
+});
 export const isProd = env.NODE_ENV === 'production';
+export const isTestWithDummyCredentials = isCI && isTest;
 
 export function getAllowedOrigins(): string[] {
   return env.CLIENT_ORIGINS.split(',')
