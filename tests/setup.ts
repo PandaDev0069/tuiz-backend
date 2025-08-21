@@ -1,12 +1,13 @@
 // tests/setup.ts
 import { beforeAll, afterAll } from 'vitest';
+import { randomBytes } from 'crypto';
 import { supabaseAdmin } from '../src/lib/supabase';
 import { logger } from '../src/utils/logger';
 import { isTestWithDummyCredentials } from '../src/config/env';
 
 // Generate unique test user data for each test run to avoid conflicts
 export function createTestUser(suffix: string = '') {
-  const uniqueId = Date.now().toString() + Math.random().toString(36).substr(2, 5);
+  const uniqueId = Date.now().toString() + randomBytes(4).toString('hex');
   const shortId = uniqueId.slice(-8); // Use last 8 characters to keep username short
 
   // Clean suffix to be alphanumeric and underscore only for username
