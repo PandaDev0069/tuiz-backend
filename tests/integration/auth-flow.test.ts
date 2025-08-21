@@ -5,14 +5,6 @@ import { createApp } from '../../src/app';
 import { supabaseAdmin } from '../../src/lib/supabase';
 import { createTestUser, cleanupTestUsers } from '../setup';
 
-interface TestUser {
-  email: string;
-  password: string;
-  username: string;
-  displayName: string;
-  uniqueId: string;
-}
-
 describe('Complete Auth Flow Integration', () => {
   const app = createApp();
   const createdUserIds: string[] = [];
@@ -25,11 +17,53 @@ describe('Complete Auth Flow Integration', () => {
     }
   });
 
-  // Helper function for aggressive cleanup
-  async function performAggressiveCleanup(userEmail: string) {
+  // Helper function for profile retry logic with exponential backoff
+  async function retryProfileCreation(
+    userId: string,
+    retryCount: number,
+    maxRetries: number,
+    baseDelay: number,
+  ) {
+    const delay = baseDelay * Math.pow(1.5, retryCount - 1); // Exponential backoff
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    const { data: profileData } = await supabaseAdmin
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileData) {
+      return profileData;
+    }
+
+    if (retryCount === maxRetries - 2) {
+      // Try manual trigger on second-to-last retry
+      try {
+        console.log(`Manual trigger attempt for user ${userId}`);
+        await supabaseAdmin.rpc('handle_new_user_manual', { user_id: userId });
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } catch {
+        // Continue with normal retry if manual trigger fails
+      }
+    }
+
+    if (retryCount < maxRetries) {
+      console.log(
+        `Profile retry ${retryCount}/${maxRetries} for user ${userId} - waiting ${delay}ms`,
+      );
+    }
+
+    return null;
+  }
+
+  it('should handle complete user journey: register → profile creation → login → logout', async () => {
+    const testUser = createTestUser('fulljourney');
+
+    // Ensure clean state - more aggressive cleanup for parallel execution
     try {
       const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const matchingUsers = allUsers.users.filter((u) => u.email === userEmail);
+      const matchingUsers = allUsers.users.filter((u) => u.email === testUser.email);
       for (const user of matchingUsers) {
         await supabaseAdmin.auth.admin.deleteUser(user.id);
       }
@@ -39,10 +73,8 @@ describe('Complete Auth Flow Integration', () => {
     } catch {
       // Ignore cleanup errors
     }
-  }
 
-  // Helper function for user registration
-  async function registerUser(testUser: TestUser) {
+    // 1. Register user
     const registerResponse = await request(app).post('/auth/register').send({
       email: testUser.email,
       password: testUser.password,
@@ -54,17 +86,7 @@ describe('Complete Auth Flow Integration', () => {
     expect(registerResponse.body).toHaveProperty('user');
     expect(registerResponse.body).toHaveProperty('session');
 
-    return registerResponse.body.user.id;
-  }
-
-  it('should handle complete user journey: register → profile creation → login → logout', async () => {
-    const testUser = createTestUser('fulljourney');
-
-    // Ensure clean state - more aggressive cleanup for parallel execution
-    await performAggressiveCleanup(testUser.email);
-
-    // 1. Register user
-    const userId = await registerUser(testUser);
+    const userId = registerResponse.body.user.id;
     createdUserIds.push(userId);
 
     // 2. Verify profile was created automatically with enhanced parallel-safe retry logic
@@ -75,36 +97,7 @@ describe('Complete Auth Flow Integration', () => {
 
     while (!profile && retryCount < maxRetries) {
       retryCount++;
-      const delay = baseDelay * Math.pow(1.5, retryCount - 1); // Exponential backoff
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
-      const { data: profileData } = await supabaseAdmin
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (profileData) {
-        profile = profileData;
-        break;
-      }
-
-      if (retryCount === maxRetries - 2) {
-        // Try manual trigger on second-to-last retry
-        try {
-          console.log(`Manual trigger attempt for user ${userId}`);
-          await supabaseAdmin.rpc('handle_new_user_manual', { user_id: userId });
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        } catch {
-          // Continue with normal retry if manual trigger fails
-        }
-      }
-
-      if (retryCount < maxRetries) {
-        console.log(
-          `Profile retry ${retryCount}/${maxRetries} for user ${userId} - waiting ${delay}ms`,
-        );
-      }
+      profile = await retryProfileCreation(userId, retryCount, maxRetries, baseDelay);
     }
 
     // If automatic trigger failed, ensure profile exists using upsert to avoid conflicts
