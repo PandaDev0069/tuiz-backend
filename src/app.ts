@@ -2,6 +2,7 @@
 import express from 'express';
 import { corsMw } from './config/cors';
 import { errorMw } from './middleware/error';
+import authRoutes from './routes/auth';
 import health from './routes/health';
 
 export function createApp() {
@@ -22,6 +23,7 @@ export function createApp() {
   });
 
   // routes
+  app.use('/auth', authRoutes);
   app.use('/health', health);
 
   // 404 → unified error contract

@@ -17,7 +17,7 @@
 ## Risk & Rollout
 
 - [ ] Low [ ] Medium [ ] High  
-      Mitigation/rollback plan:
+       Mitigation/rollback plan:
 
 ## Checks
 

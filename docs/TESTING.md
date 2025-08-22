@@ -2,91 +2,203 @@
 
 ## Goals
 
-- Fast feedback on API behavior and error contracts.
-- Minimal ceremony: no real network ports; test the app factory directly.
+- Fast feedback on API behavior and error contracts
+- Real Supabase integration testing with proper cleanup
+- Comprehensive coverage of auth flows and database operations
 
 ## Tools
 
-- **Vitest** – test runner
-- **Supertest** – HTTP assertions against the Express app (no listen)
-- (Optional later) **socket.io-client** – realtime smoke tests
+- **Vitest** – test runner with excellent TypeScript support
+- **Supertest** – HTTP assertions against the Express app (no actual server needed)
+- **Supabase Admin Client** – direct database integration for setup/teardown
+- **Real Database Testing** – all auth tests use actual Supabase instance
 
-## Test Types
+## Test Categories
 
-1. **Unit** (utils, schema transforms): tiny, isolated.
-2. **HTTP integration**: `supertest(createApp())` covering routes, middleware, and error contract.
-3. **Socket smoke** (later): connect/disconnect, one event round-trip.
+### 1. HTTP Integration Tests
 
-## Layout
+- Route handlers with actual Supabase auth
+- Error contract validation
+- Request/response validation
+
+### 2. Database Integration Tests
+
+- Profile creation triggers
+- RLS policy enforcement
+- Database function testing (RPC)
+
+### 3. End-to-End Flow Tests
+
+- Complete user journeys (register → login → logout)
+- Cross-system integration validation
+
+### 4. Unit Tests
+
+- Utility functions
+- Validation schemas
+- Error handling
+
+## Test Structure
 
 ```
 tests/
-  health.test.ts
-  not-found.test.ts
-  # more module-focused tests here (e.g., modules/games/*.test.ts)
+  setup.ts                    # Global test setup and cleanup
+  auth.test.ts                # Authentication routes (11 tests)
+  health.test.ts              # Health endpoint
+  not-found.test.ts          # 404 handling
+  database/
+    profiles.test.ts          # Database profile operations (4 tests)
+  integration/
+    auth-flow.test.ts         # End-to-end user flows (3 tests)
 ```
+
+## Test Data Management
+
+### Test Users
+
+```typescript
+// Defined in tests/setup.ts
+export const TEST_USER = {
+  email: 'test@tuiz.example.com',
+  password: 'testpassword123',
+  username: 'testuser',
+  displayName: 'Test User',
+};
+```
+
+### Cleanup Strategy
+
+- **Before All Tests**: Clean up any existing test data
+- **Before Each Test**: Ensure clean state for isolation
+- **After All Tests**: Final cleanup
+- **Automatic Cleanup**: Removes all `@tuiz.example.com` domain emails
 
 ## Commands
 
 ```bash
-npm test         # run once (CI)
-npm run test:ui  # Vitest UI (optional)
-# add "test:watch": "vitest" if you want watch mode
+npm test                           # Run all tests once (CI)
+npm test -- tests/auth.test.ts     # Run specific test file
+npm test -- --reporter=verbose     # Detailed test output
+npm run test:ui                    # Vitest UI (interactive)
+
+# Individual test categories
+npm test -- tests/auth.test.ts                      # Auth routes only
+npm test -- tests/database/profiles.test.ts         # Database tests only
+npm test -- tests/integration/auth-flow.test.ts     # Integration tests only
 ```
 
-## Patterns
+## Current Test Coverage
 
-### 1) App Factory
+### ✅ Authentication Routes (`tests/auth.test.ts`) - 11 tests
 
-Use the exported `createApp()` so tests don't bind a port:
+- **Registration**: Valid/invalid payloads, duplicate emails
+- **Login**: Valid/invalid credentials, session creation
+- **Logout**: Token validation, session invalidation
+
+### ✅ Database Integration (`tests/database/profiles.test.ts`) - 4 tests
+
+- **Profile Creation**: Automatic trigger execution
+- **Metadata Handling**: Username/display name extraction
+- **Timestamp Updates**: `last_active` RPC functions
+- **Security**: RLS policy validation
+
+### ✅ Complete Flows (`tests/integration/auth-flow.test.ts`) - 3 tests
+
+- **User Journey**: Full registration → login → logout cycle
+- **Error Scenarios**: Invalid registration/login attempts
+- **Database Consistency**: Profile creation verification
+
+### ✅ Infrastructure Tests - 2 tests
+
+- **Health Endpoint**: API status checking
+- **Error Handling**: 404 responses with unified contracts
+
+## Real Database Testing
+
+All auth and database tests use actual Supabase:
+
+- **Real Auth**: Supabase Auth API for user creation/authentication
+- **Real Database**: PostgreSQL with triggers, RLS, and functions
+- **Real Sessions**: JWT tokens and session management
+- **Proper Cleanup**: Admin client removes test data
+
+## Test Patterns
+
+### 1) Auth Route Testing
 
 ```typescript
-import request from 'supertest';
-import { createApp } from '../src/app';
+describe('POST /auth/register', () => {
+  it('should successfully register a new user with Supabase', async () => {
+    const response = await request(app).post('/auth/register').send({
+      email: TEST_USER.email,
+      password: TEST_USER.password,
+      username: TEST_USER.username,
+      displayName: TEST_USER.displayName,
+    });
 
-test('GET /health', async () => {
-  const app = createApp();
-  const res = await request(app).get('/health');
-  expect(res.status).toBe(200);
-  expect(res.body).toEqual(expect.objectContaining({ ok: true }));
+    expect(response.status).toBe(201);
+    expect(response.body).toHaveProperty('user');
+    expect(response.body).toHaveProperty('session');
+  });
 });
 ```
 
-### 2) Unified Error Contract
-
-Every non-2xx response must match:
+### 2) Database Integration Testing
 
 ```typescript
-expect(res.body).toMatchObject({
-  error: expect.any(String),
-  // message and requestId may be present
+it('should automatically create profile when user registers', async () => {
+  // Create user via Supabase Admin
+  const { data: authData } = await supabaseAdmin.auth.admin.createUser({...});
+
+  // Wait for trigger
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Verify profile creation
+  const { data: profile } = await supabaseAdmin
+    .from('profiles')
+    .select('*')
+    .eq('id', authData.user!.id)
+    .maybeSingle();
+
+  expect(profile).toBeDefined();
 });
 ```
 
-### 3) Validation Tests (when you add zod)
+### 3) Error Contract Validation
 
-- **Happy path**: valid input → 200/201 with expected body.
-- **Bad input**: invalid shape → 400 with `{ error: 'validation_error', message }`.
+```typescript
+expect(response.status).toBe(400);
+expect(response.body).toHaveProperty('error', 'invalid_payload');
+expect(response.body).toHaveProperty('message');
+```
 
-### 4) Auth (when added)
+## Test Isolation
 
-- **No token** → 401 `{ error: 'unauthorized' }`
-- **Expired/invalid token** → 401
-- **Valid token but insufficient role** → 403
+- Each test file has independent setup/teardown
+- Database cleanup prevents test interference
+- No shared state between tests
+- Deterministic test data
 
-### 5) Rate Limits (when added)
+## CI Integration
 
-- **Exceed profile** → 429 `{ error: 'rate_limited' }`
-- Document per-route profiles in ENGINEERING.md, and assert status/retry headers.
+Tests run in GitHub Actions with:
 
-## CI
+- `npm run lint` - Code quality
+- `npm run typecheck` - TypeScript validation
+- `npm test` - All test suites
+- `npm run build` - Build verification
 
-Ensure workflow runs: `npm run lint`, `npm run typecheck`, `npm test`, `npm run build`.
+## Performance Notes
 
-Keep tests deterministic and fast (no real DB unless absolutely necessary).
+- Database tests have ~2s delays for trigger execution
+- Individual test files run fast (< 10s each)
+- Parallel execution can cause timing issues (expected)
+- Tests are designed for reliability over speed
 
-## Tips
+## Future Enhancements
 
-- Prefer small, focused tests; avoid deep setups.
-- If a route depends on external services, abstract behind a repo and mock/stub there.
-- Keep fixtures near tests or under `tests/fixtures/`.
+- [ ] Socket.io integration tests
+- [ ] Quiz/game module testing
+- [ ] Performance benchmarking
+- [ ] Mocked database tests for speed
+- [ ] Test data factories
