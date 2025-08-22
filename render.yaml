@@ -3,7 +3,7 @@ services:
     name: tuiz-backend
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --ignore-scripts && npm run build
     startCommand: node dist/server.js
     healthCheckPath: /health
     envVars:
