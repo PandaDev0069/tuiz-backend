@@ -22,5 +22,6 @@ io.on('connection', (socket) => {
 });
 
 server.listen(env.PORT, () => {
-  logger.info(`api listening on http://localhost:${env.PORT} (${isProd ? 'prod' : 'dev'})`);
+  const host = isProd ? '0.0.0.0' : 'localhost';
+  logger.info(`api listening on http://${host}:${env.PORT} (${isProd ? 'prod' : 'dev'})`);
 });

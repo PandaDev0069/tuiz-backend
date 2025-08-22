@@ -28,7 +28,7 @@ const supabaseServiceRoleKey =
 
 // Default client origins for production if not set
 const defaultProductionOrigins =
-  'https://tuiz-info-king.vercel.app,http://localhost:3000,http://localhost:5173,*.vercel.app,*.onrender.com';
+  'https://tuiz-info-king.vercel.app,http://localhost:3000,http://localhost:5173,*.vercel.app,*.onrender.com,https://tuiz-info-king.vercel.app';
 
 const Env = z.object({
   PORT: z.coerce.number().default(8080),
@@ -58,8 +58,11 @@ export const isTestWithDummyCredentials = isCI && isTest;
 export function getAllowedOrigins(): string[] {
   let origins = env.CLIENT_ORIGINS;
 
-  // In production, if CLIENT_ORIGINS is not set or is the default, use production defaults
-  if (isProd && (origins === 'http://localhost:3000' || !process.env.CLIENT_ORIGINS)) {
+  // Check if we're in a production-like environment or if Vercel domain is being accessed
+  const isProductionLike = isProd || process.env.CLIENT_ORIGINS?.includes('vercel.app');
+
+  // In production or when Vercel domain is configured, use production defaults if needed
+  if (isProductionLike && (origins === 'http://localhost:3000' || !process.env.CLIENT_ORIGINS)) {
     origins = defaultProductionOrigins;
     log('[ENV] Using production default CLIENT_ORIGINS:', origins);
   }
@@ -69,8 +72,11 @@ export function getAllowedOrigins(): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  if (isProd) {
+  if (isProd || isProductionLike) {
     log('[ENV] Final allowed origins:', allowed);
+    log('[ENV] NODE_ENV:', process.env.NODE_ENV);
+    log('[ENV] CLIENT_ORIGINS from process.env:', process.env.CLIENT_ORIGINS);
+    log('[ENV] CLIENT_ORIGINS from env object:', env.CLIENT_ORIGINS);
   }
 
   return allowed;
