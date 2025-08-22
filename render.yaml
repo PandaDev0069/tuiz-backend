@@ -14,4 +14,5 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: CLIENT_ORIGINS
-        value: 'https://tuiz-info-king.vercel.app,http://localhost:3000'
+        # Allow local dev, the specific Vercel deployment, and any Vercel subdomain via wildcard
+        value: 'https://tuiz-info-king.vercel.app,http://localhost:3000,*.vercel.app'
