@@ -15,4 +15,4 @@ services:
         value: info
       - key: CLIENT_ORIGINS
         # Allow local dev, the specific Vercel deployment, and any Vercel subdomain via wildcard
-        value: 'https://tuiz-info-king.vercel.app,http://localhost:3000,*.vercel.app'
+        value: 'https://tuiz-info-king.vercel.app,http://localhost:3000,http://localhost:5173,*.vercel.app,*.onrender.com'
