@@ -13,3 +13,5 @@ services:
         value: 10000
       - key: LOG_LEVEL
         value: info
+      - key: CLIENT_ORIGINS
+        value: 'https://tuiz-info-king.vercel.app,http://localhost:3000'
