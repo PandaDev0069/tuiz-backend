@@ -1,6 +1,14 @@
 // src/config/cors.ts
 import cors from 'cors';
-import { getAllowedOrigins } from './env';
+import { getAllowedOrigins, isProd } from './env';
+
+// Logger function to avoid ESLint console statement errors
+const log = (message: string, ...args: unknown[]) => {
+  if (isProd) {
+    // eslint-disable-next-line no-console
+    console.log(message, ...args);
+  }
+};
 
 function hostnameOf(origin: string): string {
   try {
@@ -36,9 +44,29 @@ function originAllowed(origin: string, allowedList: string[]): boolean {
 export const corsMw = cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true); // curl / same-origin
+
     const allowed = getAllowedOrigins();
-    if (originAllowed(origin, allowed)) return cb(null, true);
-    // [CORS] Blocked: Logging removed to comply with linting rules
+
+    // Add logging for debugging in production
+    if (isProd) {
+      log(`[CORS] Checking origin: ${origin}`);
+      log(`[CORS] Allowed origins:`, allowed);
+    }
+
+    if (originAllowed(origin, allowed)) {
+      if (isProd) {
+        log(`[CORS] Origin ${origin} allowed`);
+      }
+      return cb(null, true);
+    }
+
+    // Log the blocked request for debugging
+    if (isProd) {
+      log(`[CORS] Origin ${origin} blocked`);
+      log(`[CORS] Hostname: ${hostnameOf(origin)}`);
+      log(`[CORS] Allowed patterns:`, allowed);
+    }
+
     cb(new Error(`CORS: ${origin} not allowed`));
   },
   credentials: true,

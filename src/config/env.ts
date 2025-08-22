@@ -8,6 +8,14 @@ if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
 
+// Logger function to avoid ESLint console statement errors
+const log = (message: string, ...args: unknown[]) => {
+  if (isProd) {
+    // eslint-disable-next-line no-console
+    console.log(message, ...args);
+  }
+};
+
 // Check if we're in a CI environment without Supabase credentials
 const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
 const isTest = process.env.NODE_ENV === 'test';
@@ -17,6 +25,10 @@ const supabaseUrl = isCI && isTest ? 'https://dummy.supabase.co' : process.env.S
 const supabaseAnonKey = isCI && isTest ? 'dummy-anon-key-for-ci' : process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey =
   isCI && isTest ? 'dummy-service-role-key-for-ci' : process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Default client origins for production if not set
+const defaultProductionOrigins =
+  'https://tuiz-info-king.vercel.app,http://localhost:3000,http://localhost:5173,*.vercel.app,*.onrender.com';
 
 const Env = z.object({
   PORT: z.coerce.number().default(8080),
@@ -39,11 +51,27 @@ export const env = Env.parse({
   SUPABASE_ANON_KEY: supabaseAnonKey,
   SUPABASE_SERVICE_ROLE_KEY: supabaseServiceRoleKey,
 });
+
 export const isProd = env.NODE_ENV === 'production';
 export const isTestWithDummyCredentials = isCI && isTest;
 
 export function getAllowedOrigins(): string[] {
-  return env.CLIENT_ORIGINS.split(',')
+  let origins = env.CLIENT_ORIGINS;
+
+  // In production, if CLIENT_ORIGINS is not set or is the default, use production defaults
+  if (isProd && (origins === 'http://localhost:3000' || !process.env.CLIENT_ORIGINS)) {
+    origins = defaultProductionOrigins;
+    log('[ENV] Using production default CLIENT_ORIGINS:', origins);
+  }
+
+  const allowed = origins
+    .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+
+  if (isProd) {
+    log('[ENV] Final allowed origins:', allowed);
+  }
+
+  return allowed;
 }
