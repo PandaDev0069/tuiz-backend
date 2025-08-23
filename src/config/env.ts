@@ -8,14 +8,6 @@ if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
 
-// Logger function to avoid ESLint console statement errors
-const log = (message: string, ...args: unknown[]) => {
-  if (isProd) {
-    // eslint-disable-next-line no-console
-    console.log(message, ...args);
-  }
-};
-
 // Check if we're in a CI environment without Supabase credentials
 const isCI = process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true';
 const isTest = process.env.NODE_ENV === 'test';
@@ -64,20 +56,12 @@ export function getAllowedOrigins(): string[] {
   // In production or when Vercel domain is configured, use production defaults if needed
   if (isProductionLike && (origins === 'http://localhost:3000' || !process.env.CLIENT_ORIGINS)) {
     origins = defaultProductionOrigins;
-    log('[ENV] Using production default CLIENT_ORIGINS:', origins);
   }
 
   const allowed = origins
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-
-  if (isProd || isProductionLike) {
-    log('[ENV] Final allowed origins:', allowed);
-    log('[ENV] NODE_ENV:', process.env.NODE_ENV);
-    log('[ENV] CLIENT_ORIGINS from process.env:', process.env.CLIENT_ORIGINS);
-    log('[ENV] CLIENT_ORIGINS from env object:', env.CLIENT_ORIGINS);
-  }
 
   return allowed;
 }
