@@ -41,3 +41,6 @@ Thumbs.db
 # Supabase (if you use local studio later)
 supabase/.branches
 supabase/.temp
+
+# Prompt
+.github/Prompts/
