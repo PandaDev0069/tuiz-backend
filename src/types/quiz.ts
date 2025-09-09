@@ -209,15 +209,6 @@ export interface AnswerResponse {
   updated_at: string;
 }
 
-// Complete Quiz Response
-export interface QuizSetCompleteResponse extends QuizSetResponse {
-  questions: QuestionWithAnswersResponse[];
-}
-
-export interface QuestionWithAnswersResponse extends QuestionResponse {
-  answers: AnswerResponse[];
-}
-
 // ============================================================================
 // VALIDATION SCHEMAS (Zod)
 // ============================================================================

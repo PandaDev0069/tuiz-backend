@@ -183,7 +183,7 @@ Creates a new quiz in draft status.
 Retrieves a quiz by ID.
 
 - **Auth:** Bearer token required (owner or public quiz)
-- **200 OK:** Returns complete quiz with questions and answers
+- **200 OK:** Returns quiz metadata (title, description, settings, etc.)
 - **404 Not Found:** Quiz not found or not accessible
 - **401 Unauthorized:** Invalid token
 
