@@ -4,6 +4,7 @@ import { corsMw } from './config/cors';
 import { errorMw } from './middleware/error';
 import authRoutes from './routes/auth';
 import health from './routes/health';
+import quizRoutes from './routes/quiz';
 
 export function createApp() {
   const app = express();
@@ -25,6 +26,7 @@ export function createApp() {
   // routes
   app.use('/auth', authRoutes);
   app.use('/health', health);
+  app.use('/quiz', quizRoutes);
 
   // 404 → unified error contract
   app.use((_req, res) => {
