@@ -39,12 +39,12 @@ This roadmap outlines the complete implementation of the quiz creation system fo
   - User context injection
   - Error handling
 
-- [ ] **Quiz Types** (`src/types/quiz.ts`)
+- [x] **Quiz Types** (`src/types/quiz.ts`)
   - Backend-specific types
   - Request/response interfaces
   - Validation schemas
 
-- [ ] **Validation Utilities** (`src/utils/quizValidation.ts`)
+- [x] **Validation Utilities** (`src/utils/quizValidation.ts`)
   - Zod schemas for all endpoints
   - Custom validation functions
   - Error message formatting
