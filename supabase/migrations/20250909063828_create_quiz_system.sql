@@ -519,7 +519,8 @@ VALUES (
     true, -- Public read access for quiz images
     10485760, -- 10MB limit for quiz images
     ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-);
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- STEP 12: CREATE STORAGE POLICIES FOR QUIZ IMAGES
