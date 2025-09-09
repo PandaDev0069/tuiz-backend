@@ -20,6 +20,7 @@ function createMockSupabaseClient() {
         deleteUser: async () => ({ data: null, error: null }),
         signOut: async () => ({ data: null, error: null }),
       },
+      getUser: async () => ({ data: { user: null }, error: { message: 'Mock auth disabled' } }),
       signInWithPassword: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),
       signOut: async () => ({ data: null, error: null }),
       signUp: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),

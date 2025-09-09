@@ -35,7 +35,7 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 #### 1.1 Core Infrastructure
 
 - [ ] **Authentication Middleware** (`src/middleware/auth.ts`)
-  - JWT token validation
+  - Supabase JWT verification using `supabaseAdmin.auth.getUser()`
   - User context injection
   - Error handling
 
