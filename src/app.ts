@@ -29,6 +29,7 @@ export function createApp() {
   app.use('/auth', authRoutes);
   app.use('/health', health);
   app.use('/quiz', quizRoutes);
+
   // Example protected route - add your protected routes here
   app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
     res.json({
