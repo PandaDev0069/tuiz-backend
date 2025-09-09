@@ -334,10 +334,24 @@ export interface QuizQueryParams {
   status?: QuizStatus;
   search?: string;
   user_id?: string;
-  is_public?: boolean;
+  is_public?: string; // Changed to string for query params
   sort_by?: 'created_at' | 'updated_at' | 'times_played' | 'title';
   sort_order?: 'asc' | 'desc';
 }
+
+// Query validation schema
+export const QuizQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(10),
+  category: z.string().optional(),
+  difficulty: DifficultyLevelSchema.optional(),
+  status: QuizStatusSchema.optional(),
+  search: z.string().optional(),
+  user_id: z.string().uuid().optional(),
+  is_public: z.enum(['true', 'false']).optional(),
+  sort_by: z.enum(['created_at', 'updated_at', 'times_played', 'title']).default('created_at'),
+  sort_order: z.enum(['asc', 'desc']).default('desc'),
+});
 
 // ============================================================================
 // PAGINATION

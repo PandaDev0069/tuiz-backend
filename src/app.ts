@@ -5,6 +5,7 @@ import { authMiddleware } from './middleware/auth';
 import { errorMw } from './middleware/error';
 import authRoutes from './routes/auth';
 import health from './routes/health';
+// import quizRoutes from './routes/quiz'; // TODO: Uncomment when quiz routes are implemented
 import { AuthenticatedRequest } from './types/auth';
 
 export function createApp() {
@@ -27,6 +28,7 @@ export function createApp() {
   // routes
   app.use('/auth', authRoutes);
   app.use('/health', health);
+  // app.use('/quiz', quizRoutes); // TODO: Uncomment when quiz routes are implemented
 
   // Example protected route - add your protected routes here
   app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {

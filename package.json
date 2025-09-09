@@ -13,7 +13,7 @@
   },
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build",
     "start": "npm run build && node dist/server.js",
     "deploy": "npm run start",
     "typecheck": "tsc -p tsconfig.json --noEmit",
