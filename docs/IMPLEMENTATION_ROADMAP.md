@@ -34,7 +34,7 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 
 #### 1.1 Core Infrastructure
 
-- [ ] **Authentication Middleware** (`src/middleware/auth.ts`)
+- [x] **Authentication Middleware** (`src/middleware/auth.ts`)
   - Supabase JWT verification using `supabaseAdmin.auth.getUser()`
   - User context injection
   - Error handling
@@ -51,29 +51,17 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 
 #### 1.2 Core Quiz APIs
 
-- [ ] **Quiz CRUD Routes** (`src/routes/quiz.ts`)
+- [x] **Quiz CRUD Routes** (`src/routes/quiz.ts`)
   - `POST /quiz` - Create quiz
   - `GET /quiz/:id` - Get quiz
   - `PUT /quiz/:id` - Update quiz
   - `DELETE /quiz/:id` - Delete quiz
   - `GET /quiz` - List quizzes
 
-- [ ] **Database Integration**
+- [x] **Database Integration**
   - Supabase client setup
   - RLS policy compliance
   - Error handling
-
-#### 1.3 Testing & Documentation
-
-- [ ] **Unit Tests** (`tests/quiz.test.ts`)
-  - All endpoint testing
-  - Error scenario testing
-  - Database operation testing
-
-- [ ] **API Documentation** (`docs/API.md`)
-  - Endpoint documentation
-  - Request/response examples
-  - Error codes
 
 ### Phase 2: Question & Answer Management 📝
 
@@ -220,6 +208,8 @@ This roadmap outlines the complete implementation of the quiz creation system fo
   - User access control
   - Data isolation
   - Admin permissions
+
+## Final phase will be adding proper unit tests, New roadmap file will be necessary for that.
 
 ## Technical Architecture
 
