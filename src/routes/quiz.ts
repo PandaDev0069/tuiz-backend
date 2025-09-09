@@ -9,7 +9,6 @@ import {
   QuizQuerySchema,
   QuizQueryParams,
   QuizSetResponse,
-  QuizSetCompleteResponse,
   QuizError,
   PaginatedResponse,
   CreateQuizSetInput,
@@ -40,42 +39,6 @@ async function getQuizById(quizId: string, userId?: string): Promise<QuizSetResp
     return data as QuizSetResponse;
   } catch (error) {
     logger.error({ error, quizId, userId }, 'Exception in getQuizById');
-    return null;
-  }
-}
-
-async function getQuizWithQuestions(
-  quizId: string,
-  userId?: string,
-): Promise<QuizSetCompleteResponse | null> {
-  try {
-    // First get the quiz
-    const quiz = await getQuizById(quizId, userId);
-    if (!quiz) return null;
-
-    // Get questions with answers
-    const { data: questions, error: questionsError } = await supabaseAdmin
-      .from('questions')
-      .select(
-        `
-        *,
-        answers (*)
-      `,
-      )
-      .eq('question_set_id', quizId)
-      .order('order_index');
-
-    if (questionsError) {
-      logger.error({ error: questionsError, quizId }, 'Error fetching questions');
-      return null;
-    }
-
-    return {
-      ...quiz,
-      questions: questions || [],
-    } as QuizSetCompleteResponse;
-  } catch (error) {
-    logger.error({ error, quizId, userId }, 'Exception in getQuizWithQuestions');
     return null;
   }
 }
@@ -184,31 +147,6 @@ router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
     res.json(quiz);
   } catch (error) {
     logger.error({ error, quizId: req.params.id }, 'Exception in GET /quiz/:id');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// GET /quiz/:id/complete - Get quiz with questions and answers
-router.get('/:id/complete', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.id;
-
-    const quiz = await getQuizWithQuestions(id, userId);
-
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found',
-      } as QuizError);
-    }
-
-    res.json(quiz);
-  } catch (error) {
-    logger.error({ error, quizId: req.params.id }, 'Exception in GET /quiz/:id/complete');
     res.status(500).json({
       error: 'internal_error',
       message: 'Internal server error',
