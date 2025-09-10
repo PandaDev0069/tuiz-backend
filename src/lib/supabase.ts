@@ -268,6 +268,23 @@ export const supabase: TypedSupabaseClient = isTestWithDummyCredentials
 // ============================================================================
 
 /**
+ * Create an authenticated Supabase client with user token
+ */
+export function createAuthenticatedClient(token: string): TypedSupabaseClient {
+  return createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY || '', {
+    global: {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    },
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+/**
  * Verify JWT token and get user information
  */
 export async function verifyAuthToken(

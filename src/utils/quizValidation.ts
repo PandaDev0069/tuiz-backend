@@ -206,22 +206,23 @@ export function validateQuizSetData(data: Record<string, unknown>): {
   };
 }
 
-export function validateQuestionData(data: Record<string, unknown>): {
-  isValid: boolean;
-  errors: string[];
-} {
+function validateQuestionText(questionText: unknown): string[] {
   const errors: string[] = [];
 
-  // Validate question text
   if (
-    !data.question_text ||
-    (data.question_text as string).length < 1 ||
-    (data.question_text as string).length > 500
+    !questionText ||
+    (questionText as string).length < 1 ||
+    (questionText as string).length > 500
   ) {
     errors.push('Question text must be between 1 and 500 characters');
   }
 
-  // Validate timing
+  return errors;
+}
+
+function validateQuestionTiming(data: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+
   if ((data.show_question_time as number) < 1 || (data.show_question_time as number) > 60) {
     errors.push('Show question time must be between 1 and 60 seconds');
   }
@@ -234,38 +235,67 @@ export function validateQuestionData(data: Record<string, unknown>): {
     errors.push('Show explanation time must be between 1 and 60 seconds');
   }
 
-  // Validate points
-  if ((data.points as number) < 1 || (data.points as number) > 100) {
+  return errors;
+}
+
+function validateQuestionPoints(points: unknown): string[] {
+  const errors: string[] = [];
+
+  if ((points as number) < 1 || (points as number) > 100) {
     errors.push('Points must be between 1 and 100');
   }
 
-  // Validate answers
-  const answers = data.answers as Array<Record<string, unknown>>;
-  if (!answers || answers.length < 2 || answers.length > 4) {
+  return errors;
+}
+
+function validateAnswerCount(answers: unknown): string[] {
+  const errors: string[] = [];
+
+  if (
+    !answers ||
+    (answers as Array<unknown>).length < 2 ||
+    (answers as Array<unknown>).length > 4
+  ) {
     errors.push('Must have between 2 and 4 answers');
-  } else {
-    const correctAnswers = answers.filter((answer) => answer.is_correct);
-    if (correctAnswers.length !== 1) {
-      errors.push('Must have exactly one correct answer');
-    }
-
-    // Validate each answer
-    answers.forEach((answer, index: number) => {
-      if (
-        !answer.answer_text ||
-        (answer.answer_text as string).length < 1 ||
-        (answer.answer_text as string).length > 200
-      ) {
-        errors.push(`Answer ${index + 1} text must be between 1 and 200 characters`);
-      }
-
-      if (answer.image_url && !validateImageUrl(answer.image_url as string)) {
-        errors.push(`Answer ${index + 1} has invalid image URL format`);
-      }
-    });
   }
 
-  // Validate image URLs
+  return errors;
+}
+
+function validateAnswerCorrectness(answers: Array<Record<string, unknown>>): string[] {
+  const errors: string[] = [];
+
+  const correctAnswers = answers.filter((answer) => answer.is_correct);
+  if (correctAnswers.length !== 1) {
+    errors.push('Must have exactly one correct answer');
+  }
+
+  return errors;
+}
+
+function validateIndividualAnswers(answers: Array<Record<string, unknown>>): string[] {
+  const errors: string[] = [];
+
+  answers.forEach((answer, index: number) => {
+    if (
+      !answer.answer_text ||
+      (answer.answer_text as string).length < 1 ||
+      (answer.answer_text as string).length > 200
+    ) {
+      errors.push(`Answer ${index + 1} text must be between 1 and 200 characters`);
+    }
+
+    if (answer.image_url && !validateImageUrl(answer.image_url as string)) {
+      errors.push(`Answer ${index + 1} has invalid image URL format`);
+    }
+  });
+
+  return errors;
+}
+
+function validateQuestionImageUrls(data: Record<string, unknown>): string[] {
+  const errors: string[] = [];
+
   if (data.image_url && !validateImageUrl(data.image_url as string)) {
     errors.push('Invalid question image URL format');
   }
@@ -273,6 +303,36 @@ export function validateQuestionData(data: Record<string, unknown>): {
   if (data.explanation_image_url && !validateImageUrl(data.explanation_image_url as string)) {
     errors.push('Invalid explanation image URL format');
   }
+
+  return errors;
+}
+
+export function validateQuestionData(data: Record<string, unknown>): {
+  isValid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  // Validate question text
+  errors.push(...validateQuestionText(data.question_text));
+
+  // Validate timing
+  errors.push(...validateQuestionTiming(data));
+
+  // Validate points
+  errors.push(...validateQuestionPoints(data.points));
+
+  // Validate answers
+  const answers = data.answers as Array<Record<string, unknown>>;
+  errors.push(...validateAnswerCount(answers));
+
+  if (answers && answers.length >= 2 && answers.length <= 4) {
+    errors.push(...validateAnswerCorrectness(answers));
+    errors.push(...validateIndividualAnswers(answers));
+  }
+
+  // Validate image URLs
+  errors.push(...validateQuestionImageUrls(data));
 
   return {
     isValid: errors.length === 0,

@@ -11,6 +11,7 @@ import {
   CreateQuestionInput,
   UpdateQuestionInput,
   QuestionType,
+  DifficultyLevel,
 } from '../types/quiz';
 import { logger } from '../utils/logger';
 import { validateRequest } from '../utils/quizValidation';
@@ -233,6 +234,144 @@ router.post(
   },
 );
 
+// ============================================================================
+// QUESTION UPDATE HELPER FUNCTIONS
+// ============================================================================
+
+function validateAnswerUpdate(
+  answers: Array<{ is_correct: boolean }>,
+  questionType: QuestionType,
+): {
+  isValid: boolean;
+  error?: string;
+} {
+  if (questionType === QuestionType.TRUE_FALSE && answers.length !== 2) {
+    return {
+      isValid: false,
+      error: 'True/False questions must have exactly 2 answers',
+    };
+  }
+
+  if (questionType === QuestionType.MULTIPLE_CHOICE && (answers.length < 2 || answers.length > 4)) {
+    return {
+      isValid: false,
+      error: 'Multiple choice questions must have between 2 and 4 answers',
+    };
+  }
+
+  const correctAnswers = answers.filter((answer) => answer.is_correct);
+  if (correctAnswers.length !== 1) {
+    return {
+      isValid: false,
+      error: 'Must have exactly one correct answer',
+    };
+  }
+
+  return { isValid: true };
+}
+
+function buildQuestionUpdatePayload(updateData: UpdateQuestionInput): Record<string, unknown> {
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  // Only update provided fields
+  if (updateData.question_text !== undefined)
+    updatePayload.question_text = updateData.question_text;
+  if (updateData.question_type !== undefined)
+    updatePayload.question_type = updateData.question_type;
+  if (updateData.image_url !== undefined) updatePayload.image_url = updateData.image_url;
+  if (updateData.show_question_time !== undefined)
+    updatePayload.show_question_time = updateData.show_question_time;
+  if (updateData.answering_time !== undefined)
+    updatePayload.answering_time = updateData.answering_time;
+  if (updateData.points !== undefined) updatePayload.points = updateData.points;
+  if (updateData.difficulty !== undefined) updatePayload.difficulty = updateData.difficulty;
+  if (updateData.order_index !== undefined) updatePayload.order_index = updateData.order_index;
+  if (updateData.explanation_title !== undefined)
+    updatePayload.explanation_title = updateData.explanation_title;
+  if (updateData.explanation_text !== undefined)
+    updatePayload.explanation_text = updateData.explanation_text;
+  if (updateData.explanation_image_url !== undefined)
+    updatePayload.explanation_image_url = updateData.explanation_image_url;
+  if (updateData.show_explanation_time !== undefined)
+    updatePayload.show_explanation_time = updateData.show_explanation_time;
+
+  return updatePayload;
+}
+
+async function updateQuestionAnswers(
+  questionId: string,
+  answers: Array<{
+    answer_text: string;
+    image_url?: string;
+    is_correct: boolean;
+    order_index: number;
+  }>,
+  questionType: QuestionType,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Validate answers
+    const validation = validateAnswerUpdate(answers, questionType);
+    if (!validation.isValid) {
+      return { success: false, error: validation.error };
+    }
+
+    // Delete existing answers
+    const { error: deleteError } = await supabaseAdmin
+      .from('answers')
+      .delete()
+      .eq('question_id', questionId);
+
+    if (deleteError) {
+      logger.error({ error: deleteError, questionId }, 'Error deleting existing answers');
+      return { success: false, error: 'Failed to update answers' };
+    }
+
+    // Insert new answers
+    const answersToInsert = answers.map((answer) => ({
+      question_id: questionId,
+      answer_text: answer.answer_text,
+      image_url: answer.image_url || null,
+      is_correct: answer.is_correct,
+      order_index: answer.order_index,
+    }));
+
+    const { error: answersError } = await supabaseAdmin.from('answers').insert(answersToInsert);
+
+    if (answersError) {
+      logger.error({ error: answersError, questionId }, 'Error creating new answers');
+      return { success: false, error: 'Failed to update answers' };
+    }
+
+    return { success: true };
+  } catch (error) {
+    logger.error({ error, questionId }, 'Exception in updateQuestionAnswers');
+    return { success: false, error: 'Failed to update answers' };
+  }
+}
+
+function buildQuestionResponse(question: Record<string, unknown>): QuestionResponse {
+  return {
+    id: question.id as string,
+    question_set_id: question.question_set_id as string,
+    question_text: question.question_text as string,
+    question_type: question.question_type as QuestionType,
+    image_url: question.image_url as string | undefined,
+    show_question_time: question.show_question_time as number,
+    answering_time: question.answering_time as number,
+    points: question.points as number,
+    difficulty: question.difficulty as DifficultyLevel,
+    order_index: question.order_index as number,
+    created_at: question.created_at as string,
+    updated_at: question.updated_at as string,
+    explanation_title: question.explanation_title as string | undefined,
+    explanation_text: question.explanation_text as string | undefined,
+    explanation_image_url: question.explanation_image_url as string | undefined,
+    show_explanation_time: question.show_explanation_time as number,
+  };
+}
+
 // PUT /quiz/:quizId/questions/:questionId - Update question
 router.put(
   '/:quizId/questions/:questionId',
@@ -263,31 +402,7 @@ router.put(
       }
 
       // Prepare update data
-      const updatePayload: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
-      };
-
-      // Only update provided fields
-      if (updateData.question_text !== undefined)
-        updatePayload.question_text = updateData.question_text;
-      if (updateData.question_type !== undefined)
-        updatePayload.question_type = updateData.question_type;
-      if (updateData.image_url !== undefined) updatePayload.image_url = updateData.image_url;
-      if (updateData.show_question_time !== undefined)
-        updatePayload.show_question_time = updateData.show_question_time;
-      if (updateData.answering_time !== undefined)
-        updatePayload.answering_time = updateData.answering_time;
-      if (updateData.points !== undefined) updatePayload.points = updateData.points;
-      if (updateData.difficulty !== undefined) updatePayload.difficulty = updateData.difficulty;
-      if (updateData.order_index !== undefined) updatePayload.order_index = updateData.order_index;
-      if (updateData.explanation_title !== undefined)
-        updatePayload.explanation_title = updateData.explanation_title;
-      if (updateData.explanation_text !== undefined)
-        updatePayload.explanation_text = updateData.explanation_text;
-      if (updateData.explanation_image_url !== undefined)
-        updatePayload.explanation_image_url = updateData.explanation_image_url;
-      if (updateData.show_explanation_time !== undefined)
-        updatePayload.show_explanation_time = updateData.show_explanation_time;
+      const updatePayload = buildQuestionUpdatePayload(updateData);
 
       // Update question
       const { data: question, error: questionError } = await supabaseAdmin
@@ -311,89 +426,23 @@ router.put(
 
       // Update answers if provided
       if (updateData.answers) {
-        // Validate answers
-        if (
-          updateData.question_type === QuestionType.TRUE_FALSE &&
-          updateData.answers.length !== 2
-        ) {
+        const answerUpdateResult = await updateQuestionAnswers(
+          questionId,
+          updateData.answers,
+          updateData.question_type || existingQuestion.question_type,
+        );
+
+        if (!answerUpdateResult.success) {
           return res.status(400).json({
             error: 'validation_error',
-            message: 'True/False questions must have exactly 2 answers',
-          } as QuizError);
-        }
-
-        if (
-          updateData.question_type === QuestionType.MULTIPLE_CHOICE &&
-          (updateData.answers.length < 2 || updateData.answers.length > 4)
-        ) {
-          return res.status(400).json({
-            error: 'validation_error',
-            message: 'Multiple choice questions must have between 2 and 4 answers',
-          } as QuizError);
-        }
-
-        const correctAnswers = updateData.answers.filter((answer) => answer.is_correct);
-        if (correctAnswers.length !== 1) {
-          return res.status(400).json({
-            error: 'validation_error',
-            message: 'Must have exactly one correct answer',
-          } as QuizError);
-        }
-
-        // Delete existing answers
-        const { error: deleteError } = await supabaseAdmin
-          .from('answers')
-          .delete()
-          .eq('question_id', questionId);
-
-        if (deleteError) {
-          logger.error({ error: deleteError, questionId }, 'Error deleting existing answers');
-          return res.status(500).json({
-            error: 'update_failed',
-            message: 'Failed to update answers',
-          } as QuizError);
-        }
-
-        // Insert new answers
-        const answersToInsert = updateData.answers.map((answer) => ({
-          question_id: questionId,
-          answer_text: answer.answer_text,
-          image_url: answer.image_url || null,
-          is_correct: answer.is_correct,
-          order_index: answer.order_index,
-        }));
-
-        const { error: answersError } = await supabaseAdmin.from('answers').insert(answersToInsert);
-
-        if (answersError) {
-          logger.error({ error: answersError, questionId }, 'Error creating new answers');
-          return res.status(500).json({
-            error: 'update_failed',
-            message: 'Failed to update answers',
+            message: answerUpdateResult.error,
           } as QuizError);
         }
       }
 
       logger.info({ questionId, quizId, userId }, 'Question updated successfully');
 
-      res.json({
-        id: question.id,
-        question_set_id: question.question_set_id,
-        question_text: question.question_text,
-        question_type: question.question_type,
-        image_url: question.image_url,
-        show_question_time: question.show_question_time,
-        answering_time: question.answering_time,
-        points: question.points,
-        difficulty: question.difficulty,
-        order_index: question.order_index,
-        created_at: question.created_at,
-        updated_at: question.updated_at,
-        explanation_title: question.explanation_title,
-        explanation_text: question.explanation_text,
-        explanation_image_url: question.explanation_image_url,
-        show_explanation_time: question.show_explanation_time,
-      } as QuestionResponse);
+      res.json(buildQuestionResponse(question));
     } catch (error) {
       logger.error(
         { error, questionId: req.params.questionId, quizId: req.params.quizId },

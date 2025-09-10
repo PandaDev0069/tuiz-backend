@@ -49,10 +49,16 @@ export async function cleanupTestUsers(specificUserIds: string[] = []) {
   }
 
   try {
-    // Get test users by email
-    const { data: users, error } = await supabaseAdmin.auth.admin.listUsers();
+    // Get test users by email with timeout
+    const { data: users, error } = (await Promise.race([
+      supabaseAdmin.auth.admin.listUsers(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('User list timeout')), 10000),
+      ),
+    ])) as { data: { users: Array<{ id: string; email?: string }> }; error: unknown };
 
     if (error) {
+      logger.warn({ error }, 'Error fetching users for cleanup');
       return;
     }
 
@@ -67,16 +73,35 @@ export async function cleanupTestUsers(specificUserIds: string[] = []) {
       );
     }
 
-    // Delete users with delay to avoid rate limiting
-    for (const user of testUsers) {
-      await supabaseAdmin.auth.admin.deleteUser(user.id);
-      await delayBetweenRequests(200); // Add small delay between deletions
+    if (testUsers.length === 0) {
+      return;
     }
 
-    // Wait longer to ensure cleanup completes
-    if (testUsers.length > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    logger.info({ count: testUsers.length }, 'Cleaning up test users');
+
+    // Delete users in parallel batches to avoid rate limiting but be faster
+    const batchSize = 3;
+    for (let i = 0; i < testUsers.length; i += batchSize) {
+      const batch = testUsers.slice(i, i + batchSize);
+      await Promise.allSettled(
+        batch.map(async (user) => {
+          try {
+            await supabaseAdmin.auth.admin.deleteUser(user.id);
+            logger.debug({ userId: user.id }, 'User deleted successfully');
+          } catch (error) {
+            // Ignore errors for already deleted users or rate limiting
+            logger.debug({ error, userId: user.id }, 'User cleanup error (likely already deleted)');
+          }
+        }),
+      );
+
+      // Small delay between batches to avoid rate limiting
+      if (i + batchSize < testUsers.length) {
+        await delayBetweenRequests(100);
+      }
     }
+
+    logger.info({ count: testUsers.length }, 'Test user cleanup completed');
   } catch (error) {
     logger.warn({ error }, 'Error during test user cleanup');
   }
@@ -86,10 +111,10 @@ export async function cleanupTestUsers(specificUserIds: string[] = []) {
 beforeAll(async () => {
   // Clean up any existing test data only at the start
   await cleanupTestUsers();
-});
+}, 30000); // 30 second timeout
 
 // Cleanup after all tests
 afterAll(async () => {
   // Clean up test data
   await cleanupTestUsers();
-});
+}, 30000); // 30 second timeout

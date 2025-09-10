@@ -245,6 +245,7 @@ export class TestDatabase {
         const { count, error } = await this.supabaseAdmin
           .from(table as keyof Database['public']['Tables'])
           .select('*', { count: 'exact', head: true });
+        // eslint-disable-next-line security/detect-object-injection
         stats[table] = error ? 0 : count || 0;
       }
 

@@ -263,12 +263,12 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
 
     it('should handle checking non-existent code', async () => {
       const { default: request } = await import('supertest');
-      // Use a more unique code that's unlikely to exist
-      const uniqueCode = Math.floor(Math.random() * 900000) + 100000;
+      // Use a more unique code that's unlikely to exist by using timestamp
+      const uniqueCode = 100000 + (Date.now() % 900000);
       const response = await request(app).get(`/quiz/code/check/${uniqueCode}`);
 
       expect(response.status).toBe(200);
-      expect(response.body.available).toBe(true);
+      expect(response.body.isAvailable).toBe(true);
     });
 
     it('should handle removing non-existent code', async () => {

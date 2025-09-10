@@ -1,6 +1,6 @@
 // src/routes/answers.ts
 import express from 'express';
-import { supabaseAdmin } from '../lib/supabase';
+import { supabaseAdmin, createAuthenticatedClient } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types/auth';
 import {
@@ -91,6 +91,13 @@ async function getQuestionByIdOnly(
 
 async function getAnswerById(answerId: string, questionId: string): Promise<AnswerResponse | null> {
   try {
+    // Validate UUID format before querying database
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(answerId)) {
+      logger.warn({ answerId, questionId }, 'Invalid UUID format for answer ID');
+      return null;
+    }
+
     const { data, error } = await supabaseAdmin
       .from('answers')
       .select('*')
@@ -139,25 +146,48 @@ async function validateAnswerConstraints(
       return { isValid: false, message: 'Question not found' };
     }
 
-    // Count correct answers including the new/updated one
-    const correctAnswers = existingAnswers?.filter((answer) => answer.is_correct) || [];
-    const totalCorrectAnswers = correctAnswers.length + (answerData.is_correct ? 1 : 0);
+    const existingAnswerList = existingAnswers || [];
+    const correctAnswers = existingAnswerList.filter((answer) => answer.is_correct);
+
+    // For answer creation (no excludeAnswerId), check total answers after addition
+    // For answer updates (with excludeAnswerId), check total answers after update
+    const totalAnswersAfterOperation = excludeAnswerId
+      ? existingAnswerList.length
+      : existingAnswerList.length + 1;
+
+    // For correct answers, count existing correct answers
+    // If the new/updated answer will be correct, add 1
+    // If we're updating an existing correct answer to incorrect, subtract 1
+    let totalCorrectAnswersAfterOperation = correctAnswers.length;
+
+    if (excludeAnswerId) {
+      // For updates: check if we're changing the correctness
+      const existingAnswer = existingAnswerList.find((a) => a.id === excludeAnswerId);
+      if (existingAnswer?.is_correct && !answerData.is_correct) {
+        totalCorrectAnswersAfterOperation--; // removing a correct answer
+      } else if (!existingAnswer?.is_correct && answerData.is_correct) {
+        totalCorrectAnswersAfterOperation++; // making an incorrect answer correct
+      }
+    } else {
+      // For creation: if the new answer is correct, add 1
+      if (answerData.is_correct) {
+        totalCorrectAnswersAfterOperation++;
+      }
+    }
 
     // Validate based on question type
     if (question.question_type === QuestionType.TRUE_FALSE) {
-      const totalAnswers = (existingAnswers?.length || 0) + (excludeAnswerId ? 0 : 1);
-      if (totalAnswers > 2) {
+      if (totalAnswersAfterOperation > 2) {
         return { isValid: false, message: 'True/False questions can only have 2 answers' };
       }
     } else if (question.question_type === QuestionType.MULTIPLE_CHOICE) {
-      const totalAnswers = (existingAnswers?.length || 0) + (excludeAnswerId ? 0 : 1);
-      if (totalAnswers > 4) {
+      if (totalAnswersAfterOperation > 4) {
         return { isValid: false, message: 'Multiple choice questions can have at most 4 answers' };
       }
     }
 
-    // Must have exactly one correct answer
-    if (totalCorrectAnswers !== 1) {
+    // Must have exactly one correct answer after the operation
+    if (totalCorrectAnswersAfterOperation !== 1) {
       return { isValid: false, message: 'Must have exactly one correct answer' };
     }
 
@@ -210,8 +240,20 @@ router.post(
         } as QuizError);
       }
 
+      // Create authenticated client for RLS compliance
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({
+          error: 'unauthorized',
+          message: 'No valid session token provided',
+        } as QuizError);
+      }
+
+      const supabase = createAuthenticatedClient(token);
+
       // Create answer
-      const { data: answer, error: answerError } = await supabaseAdmin
+      const { data: answer, error: answerError } = await supabase
         .from('answers')
         .insert({
           question_id: questionId,
@@ -309,8 +351,20 @@ router.put(
         } as QuizError);
       }
 
+      // Create authenticated client for RLS compliance
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.split(' ')[1];
+      if (!token) {
+        return res.status(401).json({
+          error: 'unauthorized',
+          message: 'No valid session token provided',
+        } as QuizError);
+      }
+
+      const supabase = createAuthenticatedClient(token);
+
       // Update answer
-      const { data: answer, error: answerError } = await supabaseAdmin
+      const { data: answer, error: answerError } = await supabase
         .from('answers')
         .update({
           answer_text: answerData.answer_text,
