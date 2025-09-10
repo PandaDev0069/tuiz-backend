@@ -23,7 +23,12 @@ AS $$
 BEGIN
     -- Check if this would leave the question with no answers
     -- Use BEFORE DELETE trigger and check if count would be < 1 after deletion
-    IF (SELECT COUNT(*) FROM public.answers WHERE question_id = OLD.question_id AND deleted_at IS NULL) <= 1 THEN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.answers
+        WHERE question_id = OLD.question_id AND deleted_at IS NULL
+        AND id <> OLD.id
+        LIMIT 1
+    ) THEN
         RAISE EXCEPTION 'Cannot delete the last answer. A question must have at least one answer.'
             USING ERRCODE = 'P0001', -- Custom error code
                   DETAIL = 'Question ID: ' || OLD.question_id::text,
