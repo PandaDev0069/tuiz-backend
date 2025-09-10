@@ -268,7 +268,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const response = await request(app).get(`/quiz/code/check/${uniqueCode}`);
 
       expect(response.status).toBe(200);
-      expect(response.body.isAvailable).toBe(true);
+      expect(response.body.available).toBe(true);
     });
 
     it('should handle removing non-existent code', async () => {
