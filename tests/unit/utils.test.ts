@@ -326,11 +326,19 @@ describe('Validation Utilities', () => {
 
   it('should sanitize input data', () => {
     const input = '<script>alert("xss")</script>Test';
-    const sanitized = input.replace(/<[^>]*>/g, '');
+    // More comprehensive sanitization that removes all HTML tags and dangerous characters
+    const sanitized = input
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/javascript:/gi, '') // Remove javascript: protocol
+      .replace(/on\w+\s*=/gi, '') // Remove event handlers
+      .replace(/["']/g, '') // Remove quotes that could break out of attributes
+      .trim();
 
-    expect(sanitized).toBe('alert("xss")Test');
+    expect(sanitized).toBe('alert(xss)Test');
     expect(sanitized).not.toContain('<script>');
     expect(sanitized).not.toContain('</script>');
+    expect(sanitized).not.toContain('javascript:');
+    expect(sanitized).not.toContain('onclick=');
   });
 });
 

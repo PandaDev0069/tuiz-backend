@@ -2,6 +2,7 @@
 import express from 'express';
 import { supabaseAdmin, createAuthenticatedClient } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
+import { answerRateLimit } from '../middleware/rateLimit';
 import { AuthenticatedRequest } from '../types/auth';
 import {
   CreateAnswerSchema,
@@ -248,6 +249,7 @@ async function validateAnswerConstraints(
 // POST /quiz/:quizId/questions/:questionId/answers - Add answer
 router.post(
   '/:quizId/questions/:questionId/answers',
+  answerRateLimit,
   authMiddleware,
   validateRequest(CreateAnswerSchema),
   async (req: AuthenticatedRequest, res) => {
@@ -350,6 +352,7 @@ router.post(
 // PUT /quiz/:quizId/questions/:questionId/answers/:answerId - Update answer
 router.put(
   '/:quizId/questions/:questionId/answers/:answerId',
+  answerRateLimit,
   authMiddleware,
   validateRequest(CreateAnswerSchema),
   async (req: AuthenticatedRequest, res) => {

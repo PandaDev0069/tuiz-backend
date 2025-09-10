@@ -7,6 +7,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../../src/utils/logger';
+import { randomBytes } from 'crypto';
 // Note: RateLimitHelper import removed as it's not used in this file
 import type { Database } from '../../src/lib/supabase';
 import type { TestDatabase } from './testDatabase';
@@ -47,7 +48,7 @@ export class TestAuth {
    */
   async createTestUser(options: CreateTestUserOptions = {}): Promise<TestUser> {
     const {
-      email = `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}@example.com`,
+      email = `test-${Date.now()}-${randomBytes(6).toString('hex')}@example.com`,
       username = `testuser_${Date.now()}`,
       displayName = `Test User ${Date.now()}`,
       role = 'user',
@@ -146,8 +147,7 @@ export class TestAuth {
       const userOptions = {
         ...options,
         email:
-          options.email ||
-          `test-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}@example.com`,
+          options.email || `test-${Date.now()}-${i}-${randomBytes(6).toString('hex')}@example.com`,
         username: options.username || `testuser_${Date.now()}_${i}`,
         displayName: options.displayName || `Test User ${Date.now()} ${i}`,
       };
