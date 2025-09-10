@@ -20,6 +20,12 @@ export interface TestResponse {
   body: Record<string, unknown>;
 }
 
+interface TestRequest {
+  query: (data: Record<string, string>) => TestRequest;
+  send: (data: Record<string, unknown>) => TestRequest;
+  set: (headers: Record<string, string>) => TestRequest;
+}
+
 // ============================================================================
 // REQUEST HELPERS
 // ============================================================================
@@ -43,14 +49,33 @@ export class TestRequestHelper {
     data?: Record<string, unknown>,
   ) {
     const authHeader = await this.testAuth.getAuthHeader(userId);
+    let req: TestRequest;
 
-    let req = request(this.app)[method](endpoint).set(authHeader);
-    
+    switch (method) {
+      case 'get':
+        req = request(this.app).get(endpoint).set(authHeader);
+        break;
+      case 'post':
+        req = request(this.app).post(endpoint).set(authHeader);
+        break;
+      case 'put':
+        req = request(this.app).put(endpoint).set(authHeader);
+        break;
+      case 'delete':
+        req = request(this.app).delete(endpoint).set(authHeader);
+        break;
+      case 'patch':
+        req = request(this.app).patch(endpoint).set(authHeader);
+        break;
+      default:
+        throw new Error(`Unsupported method: ${method}`);
+    }
+
     if (data) {
       if (method === 'get') {
         req = req.query(data as Record<string, string>);
       } else {
-        req = req.send(data);
+        req = req.send(data as Record<string, unknown>);
       }
     }
 
@@ -65,13 +90,33 @@ export class TestRequestHelper {
     endpoint: string,
     data?: Record<string, unknown>,
   ) {
-    let req = request(this.app)[method](endpoint);
-    
+    let req: TestRequest;
+
+    switch (method) {
+      case 'get':
+        req = request(this.app).get(endpoint);
+        break;
+      case 'post':
+        req = request(this.app).post(endpoint);
+        break;
+      case 'put':
+        req = request(this.app).put(endpoint);
+        break;
+      case 'delete':
+        req = request(this.app).delete(endpoint);
+        break;
+      case 'patch':
+        req = request(this.app).patch(endpoint);
+        break;
+      default:
+        throw new Error(`Unsupported method: ${method}`);
+    }
+
     if (data) {
       if (method === 'get') {
         req = req.query(data as Record<string, string>);
       } else {
-        req = req.send(data);
+        req = req.send(data as Record<string, unknown>);
       }
     }
 
@@ -87,13 +132,33 @@ export class TestRequestHelper {
     headers: Record<string, string>,
     data?: Record<string, unknown>,
   ) {
-    let req = request(this.app)[method](endpoint).set(headers);
-    
+    let req: TestRequest;
+
+    switch (method) {
+      case 'get':
+        req = request(this.app).get(endpoint).set(headers);
+        break;
+      case 'post':
+        req = request(this.app).post(endpoint).set(headers);
+        break;
+      case 'put':
+        req = request(this.app).put(endpoint).set(headers);
+        break;
+      case 'delete':
+        req = request(this.app).delete(endpoint).set(headers);
+        break;
+      case 'patch':
+        req = request(this.app).patch(endpoint).set(headers);
+        break;
+      default:
+        throw new Error(`Unsupported method: ${method}`);
+    }
+
     if (data) {
       if (method === 'get') {
         req = req.query(data as Record<string, string>);
       } else {
-        req = req.send(data);
+        req = req.send(data as Record<string, unknown>);
       }
     }
 
@@ -146,14 +211,14 @@ export class TestAssertions {
    * Assert that a response has the expected structure
    */
   static expectStructure(response: TestResponse, expectedStructure: Record<string, string>): void {
-    const body = response.body;
+    const body = response.body as Record<string, unknown>;
 
     for (const [key, expectedType] of Object.entries(expectedStructure)) {
-      if (!(key in body)) {
+      if (!Object.prototype.hasOwnProperty.call(body, key)) {
         throw new Error(`Expected property '${key}' not found in response`);
       }
 
-      const actualType = typeof body[key];
+      const actualType = typeof Object.getOwnPropertyDescriptor(body, key)?.value;
       if (actualType !== expectedType) {
         throw new Error(
           `Expected property '${key}' to be of type '${expectedType}', but got '${actualType}'`,
@@ -166,16 +231,17 @@ export class TestAssertions {
    * Assert that a response contains specific data
    */
   static expectContains(response: TestResponse, expectedData: Record<string, unknown>): void {
-    const body = response.body;
+    const body = response.body as Record<string, unknown>;
 
     for (const [key, expectedValue] of Object.entries(expectedData)) {
-      if (!(key in body)) {
+      if (!Object.prototype.hasOwnProperty.call(body, key)) {
         throw new Error(`Expected property '${key}' not found in response`);
       }
 
-      if (body[key] !== expectedValue) {
+      const bodyValue = Object.getOwnPropertyDescriptor(body, key)?.value;
+      if (bodyValue !== expectedValue) {
         throw new Error(
-          `Expected property '${key}' to be '${expectedValue}', but got '${body[key]}'`,
+          `Expected property '${key}' to be '${String(expectedValue)}', but got '${String(bodyValue)}'`,
         );
       }
     }

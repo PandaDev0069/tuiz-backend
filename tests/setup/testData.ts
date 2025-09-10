@@ -201,12 +201,12 @@ export class QuestionDataFactory {
     difficulty: 'EASY' | 'MEDIUM' | 'HARD',
     overrides: Partial<TestQuestionData> = {},
   ): TestQuestionData {
-    const timeLimits: Record<string, number> = { EASY: 60, MEDIUM: 30, HARD: 15 };
-    const points: Record<string, number> = { EASY: 5, MEDIUM: 10, HARD: 20 };
+    const timeLimit = difficulty === 'EASY' ? 60 : difficulty === 'MEDIUM' ? 30 : 15;
+    const pointValue = difficulty === 'EASY' ? 5 : difficulty === 'MEDIUM' ? 10 : 20;
 
     return this.createMultipleChoiceQuestion({
-      time_limit: timeLimits[difficulty],
-      points: points[difficulty],
+      time_limit: timeLimit,
+      points: pointValue,
       ...overrides,
     });
   }

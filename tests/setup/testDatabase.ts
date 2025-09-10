@@ -245,8 +245,15 @@ export class TestDatabase {
         const { count, error } = await this.supabaseAdmin
           .from(table as keyof Database['public']['Tables'])
           .select('*', { count: 'exact', head: true });
-
-        stats[table] = error ? 0 : count || 0;
+        if (table === 'profiles') {
+          stats.profiles = error ? 0 : count || 0;
+        } else if (table === 'quiz_sets') {
+          stats.quiz_sets = error ? 0 : count || 0;
+        } else if (table === 'questions') {
+          stats.questions = error ? 0 : count || 0;
+        } else if (table === 'answers') {
+          stats.answers = error ? 0 : count || 0;
+        }
       }
 
       return stats;
