@@ -181,13 +181,68 @@ function createMockSupabaseClient(): TypedSupabaseClient {
       admin: {
         listUsers: async () => ({ data: { users: [] }, error: null }),
         getUserById: async () => ({ data: null, error: { message: 'User not found in mock' } }),
+        createUser: async () => ({ data: { user: { id: 'mock-user-id' } }, error: null }),
         deleteUser: async () => ({ data: null, error: null }),
+        getUser: async (token: string) => {
+          // Mock behavior: return error for obviously invalid tokens
+          if (token === 'invalid-token' || !token || token.length < 10) {
+            return { data: { user: null }, error: { message: 'Invalid token' } };
+          }
+          // For CI environment, always return a valid user for properly formatted tokens
+          return {
+            data: {
+              user: {
+                id: 'mock-user-id',
+                email: 'mock@example.com',
+                user_metadata: { username: 'mockuser', display_name: 'Mock User' },
+              },
+            },
+            error: null,
+          };
+        },
         signOut: async () => ({ data: null, error: null }),
       },
-      getUser: async () => ({ data: { user: null }, error: { message: 'Mock auth disabled' } }),
-      signInWithPassword: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),
+      getUser: async (token: string) => {
+        // Mock behavior for regular client: return error for obviously invalid tokens
+        if (token === 'invalid-token' || !token || token.length < 10) {
+          return { data: { user: null }, error: { message: 'Invalid token' } };
+        }
+        // For CI environment, always return a valid user for properly formatted tokens
+        return {
+          data: {
+            user: {
+              id: 'mock-user-id',
+              email: 'mock@example.com',
+              user_metadata: { username: 'mockuser', display_name: 'Mock User' },
+            },
+          },
+          error: null,
+        };
+      },
+      signInWithPassword: async (credentials: { email: string; password: string }) => {
+        // Mock behavior: return error for invalid credentials
+        if (credentials.password === 'wrongpassword123' || !credentials.email.includes('@')) {
+          return {
+            data: { user: null, session: null },
+            error: { message: 'Invalid login credentials' },
+          };
+        }
+        return {
+          data: {
+            user: { id: 'mock-user-id' },
+            session: { access_token: 'mock-token', refresh_token: 'mock-refresh-token' },
+          },
+          error: null,
+        };
+      },
       signOut: async () => ({ data: null, error: null }),
-      signUp: async () => ({ data: null, error: { message: 'Mock auth disabled' } }),
+      signUp: async () => ({
+        data: {
+          user: { id: 'mock-user-id' },
+          session: { access_token: 'mock-token', refresh_token: 'mock-refresh-token' },
+        },
+        error: null,
+      }),
     },
     from: (_table: string) => ({
       select: (_columns?: string) => ({

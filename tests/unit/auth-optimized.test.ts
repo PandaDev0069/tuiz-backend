@@ -13,6 +13,7 @@ import { UserDataFactory } from '../setup/testData';
 describe('Authentication Tests (Rate-Limited)', () => {
   let app: ReturnType<typeof createApp>;
   let sharedTestUser: { email: string; access_token: string } | null = null;
+  let sharedTestUserData: { email: string; username: string; display_name: string } | null = null;
 
   beforeAll(async () => {
     app = createApp();
@@ -81,11 +82,12 @@ describe('Authentication Tests (Rate-Limited)', () => {
 
       // Store user for reuse
       sharedTestUser = response.body.user;
+      sharedTestUserData = userData; // Store original user data with password
     });
 
     it('should handle user login with rate limiting', async () => {
       // Skip if we don't have a user to test with
-      if (!sharedTestUser) {
+      if (!sharedTestUser || !sharedTestUserData) {
         console.log('Skipping login test - no user available');
         expect(true).toBe(true); // Mark as passed
         return;
@@ -94,11 +96,15 @@ describe('Authentication Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('auth', async () => {
         const { default: request } = await import('supertest');
         return request(app).post('/auth/login').send({
-          email: sharedTestUser!.email,
+          email: sharedTestUserData.email,
           password: 'TestPassword123!',
         });
       });
 
+      if (response.status !== 200) {
+        console.log('Login test failed with status:', response.status);
+        console.log('Response body:', response.body);
+      }
       expect(response.status).toBe(200);
       expect(response.body).toHaveProperty('user');
       expect(response.body).toHaveProperty('session');

@@ -282,6 +282,10 @@ export class TestDatabase {
             Promise.resolve({ data: { user: { id: 'mock-user-id' } }, error: null }),
           deleteUser: () => Promise.resolve({ data: null, error: null }),
           getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+          listUsers: () => Promise.resolve({ data: { users: [] }, error: null }),
+          getUserById: () =>
+            Promise.resolve({ data: null, error: { message: 'User not found in mock' } }),
+          signOut: () => Promise.resolve({ data: null, error: null }),
         },
         signInWithPassword: () =>
           Promise.resolve({

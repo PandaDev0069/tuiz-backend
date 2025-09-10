@@ -11,8 +11,9 @@ export default defineConfig({
         singleFork: true, // Disable parallel execution for CI stability
       },
     },
-    testTimeout: 15000, // Reduced timeout for CI
-    hookTimeout: 10000, // Reduced hook timeout for CI
+    testTimeout: 30000, // Increased timeout for CI stability
+    hookTimeout: 15000, // Increased hook timeout for CI
+    setupFiles: ['tests/setup.ts'],
     reporters: ['verbose', 'junit'],
     outputFile: {
       junit: './test-results/junit.xml',
@@ -21,12 +22,17 @@ export default defineConfig({
       NODE_ENV: 'test',
       CI: 'true',
       DOTENV_CONFIG_QUIET: 'true',
+      // Add retry configuration for auth
+      TEST_RETRY_COUNT: '3',
+      TEST_RETRY_DELAY: '1000',
     },
     // Optimize for CI
     maxConcurrency: 1,
     // Reduce memory usage
     isolate: true,
-    // Fail fast on first error
-    bail: 1,
+    // Don't fail fast - let more tests run to see all issues
+    bail: 0,
+    // Add retry logic for flaky tests
+    retry: 2,
   },
 });

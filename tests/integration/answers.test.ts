@@ -310,8 +310,17 @@ describe('Answer Management Integration Tests (Rate-Limited)', () => {
       const { default: request } = await import('supertest');
       const response = await request(app)
         .post('/quiz/invalid-id/questions/invalid-id/answers')
-        .set('Authorization', 'Bearer invalid-token');
+        .set('Authorization', 'Bearer invalid-token')
+        .send({
+          answer_text: 'Test answer',
+          is_correct: true,
+          order_index: 0,
+        });
 
+      if (response.status !== 401) {
+        console.log('Unauthorized test failed with status:', response.status);
+        console.log('Response body:', response.body);
+      }
       expect(response.status).toBe(401);
     });
 

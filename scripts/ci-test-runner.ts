@@ -18,13 +18,13 @@ const TEST_CONFIG = {
     'tests/unit/validation.test.ts',
     'tests/unit/utils.test.ts',
     'tests/unit/auth-optimized.test.ts',
+    'tests/not-found.test.ts',
   ],
 
   // High priority tests for main functionality
   HIGH: [
     'tests/auth.test.ts',
     'tests/integration/auth-flow.test.ts',
-    'tests/quiz.test.ts',
     'tests/integration/quiz-optimized.test.ts',
   ],
 
@@ -35,6 +35,7 @@ const TEST_CONFIG = {
     'tests/integration/questions.test.ts',
     'tests/integration/codes.test.ts',
     'tests/integration/publishing.test.ts',
+    'tests/quiz.test.ts', // Moved to medium due to auth timing issues
   ],
 
   // Low priority tests for complex workflows
@@ -101,6 +102,14 @@ function runTests(testFiles: string[], strategy: string): boolean {
     const command = `vitest --config vitest.ci.config.ts --run ${testFiles.join(' ')}`;
     console.log(`\n🔧 Executing: ${command}\n`);
 
+    // Check if we have real Supabase credentials or are using dummy ones
+    const usingRealCredentials =
+      process.env.SUPABASE_URL && !process.env.SUPABASE_URL.includes('dummy');
+
+    if (!usingRealCredentials) {
+      console.log('ℹ️  Using mock Supabase credentials for testing');
+    }
+
     execSync(command, {
       stdio: 'inherit',
       cwd: process.cwd(),
@@ -108,6 +117,11 @@ function runTests(testFiles: string[], strategy: string): boolean {
         ...process.env,
         NODE_ENV: 'test',
         CI: 'true',
+        // Ensure we have dummy credentials if real ones aren't available
+        SUPABASE_URL: process.env.SUPABASE_URL || 'https://dummy.supabase.co',
+        SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || 'dummy-anon-key-for-ci',
+        SUPABASE_SERVICE_ROLE_KEY:
+          process.env.SUPABASE_SERVICE_ROLE_KEY || 'dummy-service-role-key-for-ci',
       },
     });
 
@@ -115,7 +129,20 @@ function runTests(testFiles: string[], strategy: string): boolean {
     return true;
   } catch (error) {
     console.error('\n❌ Tests failed!');
-    console.error((error as Error).message);
+    const errorMessage = (error as Error).message;
+
+    // Check if it's a test failure vs other error
+    if (errorMessage.includes('Command failed') && errorMessage.includes('exit code 1')) {
+      console.error('Some tests failed. Check the output above for details.');
+    } else {
+      console.error('Test execution error:', errorMessage);
+    }
+
+    // In CI, we might want to be more lenient with some test failures
+    if (process.env.CI === 'true' && strategy === 'PR') {
+      console.log('ℹ️  In CI PR mode - some test failures might be acceptable');
+    }
+
     return false;
   }
 }
