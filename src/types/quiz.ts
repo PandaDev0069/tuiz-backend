@@ -351,6 +351,32 @@ export const PublishingResponseSchema = z.object({
   validation: QuizValidationResponseSchema.optional(),
 });
 
+// Code Generation Response Schema
+export const CodeGenerationResponseSchema = z.object({
+  message: z.string(),
+  code: z.number().int().min(100000).max(999999),
+  quiz: z.object({
+    id: z.string().uuid(),
+    play_settings: z.any(),
+  }),
+});
+
+// Code Check Response Schema
+export const CodeCheckResponseSchema = z.object({
+  code: z.number().int().min(100000).max(999999),
+  isAvailable: z.boolean(),
+  quizId: z.string().uuid().nullable(),
+  message: z.string(),
+});
+
+// Quiz Code Response Schema
+export const QuizCodeResponseSchema = z.object({
+  quizId: z.string().uuid(),
+  code: z.number().int().min(100000).max(999999).nullable(),
+  hasCode: z.boolean(),
+  message: z.string(),
+});
+
 // ============================================================================
 // ERROR TYPES
 // ============================================================================
@@ -421,3 +447,6 @@ export type UpdateAnswerInput = z.infer<typeof UpdateAnswerSchema>;
 export type ReorderQuestionsInput = z.infer<typeof ReorderQuestionsSchema>;
 export type QuizValidationResponse = z.infer<typeof QuizValidationResponseSchema>;
 export type PublishingResponse = z.infer<typeof PublishingResponseSchema>;
+export type CodeGenerationResponse = z.infer<typeof CodeGenerationResponseSchema>;
+export type CodeCheckResponse = z.infer<typeof CodeCheckResponseSchema>;
+export type QuizCodeResponse = z.infer<typeof QuizCodeResponseSchema>;
