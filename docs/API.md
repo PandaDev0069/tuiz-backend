@@ -422,6 +422,66 @@ Validates quiz code format.
   ```
 - **400 Bad Request:** Invalid code format
 
+## API Endpoints Summary
+
+### Quiz Management
+
+| Method | Endpoint    | Description  | Auth     |
+| ------ | ----------- | ------------ | -------- |
+| POST   | `/quiz`     | Create quiz  | Required |
+| GET    | `/quiz/:id` | Get quiz     | Required |
+| PUT    | `/quiz/:id` | Update quiz  | Owner    |
+| DELETE | `/quiz/:id` | Delete quiz  | Owner    |
+| GET    | `/quiz`     | List quizzes | Required |
+
+### Question Management
+
+| Method | Endpoint                              | Description       | Auth  |
+| ------ | ------------------------------------- | ----------------- | ----- |
+| POST   | `/quiz/:quizId/questions`             | Add question      | Owner |
+| PUT    | `/quiz/:quizId/questions/:questionId` | Update question   | Owner |
+| DELETE | `/quiz/:quizId/questions/:questionId` | Delete question   | Owner |
+| PUT    | `/quiz/:quizId/questions/reorder`     | Reorder questions | Owner |
+
+### Answer Management
+
+| Method | Endpoint                                                | Description   | Auth  |
+| ------ | ------------------------------------------------------- | ------------- | ----- |
+| POST   | `/quiz/:quizId/questions/:questionId/answers`           | Add answer    | Owner |
+| PUT    | `/quiz/:quizId/questions/:questionId/answers/:answerId` | Update answer | Owner |
+| DELETE | `/quiz/:quizId/questions/:questionId/answers/:answerId` | Delete answer | Owner |
+
+### Publishing
+
+| Method | Endpoint              | Description    | Auth  |
+| ------ | --------------------- | -------------- | ----- |
+| POST   | `/quiz/:id/publish`   | Publish quiz   | Owner |
+| POST   | `/quiz/:id/unpublish` | Unpublish quiz | Owner |
+| GET    | `/quiz/:id/validate`  | Validate quiz  | Owner |
+
+### Code Management
+
+| Method | Endpoint                  | Description             | Auth  |
+| ------ | ------------------------- | ----------------------- | ----- |
+| POST   | `/quiz/:id/generate-code` | Generate unique code    | Owner |
+| GET    | `/quiz/code/check/:code`  | Check code availability | None  |
+| GET    | `/quiz/:id/code`          | Get current quiz code   | Owner |
+| DELETE | `/quiz/:id/code`          | Remove quiz code        | Owner |
+
+### Authentication
+
+| Method | Endpoint         | Description | Auth |
+| ------ | ---------------- | ----------- | ---- |
+| POST   | `/auth/register` | Register    | None |
+| POST   | `/auth/login`    | Login       | None |
+| POST   | `/auth/logout`   | Logout      | None |
+
+### Health Check
+
+| Method | Endpoint  | Description  | Auth |
+| ------ | --------- | ------------ | ---- |
+| GET    | `/health` | Health check | None |
+
 ## Conventions
 
 - **Versioning:** add `X-Contract-Version` header in future (optional).
