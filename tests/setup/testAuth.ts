@@ -7,6 +7,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '../../src/utils/logger';
+// Note: RateLimitHelper import removed as it's not used in this file
 import type { Database } from '../../src/lib/supabase';
 import type { TestDatabase } from './testDatabase';
 

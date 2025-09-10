@@ -44,6 +44,9 @@ export {
   createTestContext,
 } from './testUtils';
 
+// Rate limiting
+export { RateLimitHelper, TestOptimization } from './rateLimitHelper';
+
 // Type exports
 export type { TestDatabaseConfig } from './testDatabase';
 export type { TestUser, CreateTestUserOptions } from './testAuth';
