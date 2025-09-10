@@ -69,7 +69,7 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 
 #### 2.1 Question APIs
 
-- [ ] **Question Routes** (`src/routes/questions.ts`)
+- [x] **Question Routes** (`src/routes/questions.ts`)
   - `POST /quiz/:quizId/questions` - Add question
   - `PUT /quiz/:quizId/questions/:questionId` - Update question
   - `DELETE /quiz/:quizId/questions/:questionId` - Delete question
@@ -77,7 +77,7 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 
 #### 2.2 Answer APIs
 
-- [ ] **Answer Routes** (`src/routes/answers.ts`)
+- [x] **Answer Routes** (`src/routes/answers.ts`)
   - `POST /quiz/:quizId/questions/:questionId/answers` - Add answer
   - `PUT /quiz/:quizId/questions/:questionId/answers/:answerId` - Update answer
   - `DELETE /quiz/:quizId/questions/:questionId/answers/:answerId` - Delete answer
@@ -101,14 +101,14 @@ This roadmap outlines the complete implementation of the quiz creation system fo
 
 #### 3.1 Publishing APIs
 
-- [ ] **Publishing Routes** (`src/routes/publishing.ts`)
+- [x] **Publishing Routes** (`src/routes/publishing.ts`)
   - `POST /quiz/:id/publish` - Publish quiz
   - `POST /quiz/:id/unpublish` - Unpublish quiz
   - `GET /quiz/:id/validate` - Validate quiz
 
 #### 3.2 Quiz Code Management
 
-- [ ] **Code Generation** (`src/routes/codes.ts`)
+- [x] **Code Generation** (`src/routes/codes.ts`)
   - `POST /quiz/:id/generate-code` - Generate unique code
   - `GET /quiz/code/check/:code` - Check code availability
 
