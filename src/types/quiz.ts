@@ -316,6 +316,41 @@ export const ReorderQuestionsSchema = z.object({
   questionIds: z.array(z.string().uuid()).min(1),
 });
 
+// Quiz Validation Response Schema
+export const QuizValidationResponseSchema = z.object({
+  isValid: z.boolean(),
+  errors: z.array(z.string()),
+  warnings: z.array(z.string()),
+});
+
+// Quiz Set Response Schema
+export const QuizSetResponseSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid(),
+  title: z.string(),
+  description: z.string(),
+  thumbnail_url: z.string().nullable(),
+  is_public: z.boolean(),
+  difficulty_level: DifficultyLevelSchema,
+  category: z.string(),
+  total_questions: z.number().int().min(0),
+  times_played: z.number().int().min(0),
+  created_at: z.string(),
+  updated_at: z.string(),
+  status: QuizStatusSchema,
+  tags: z.array(z.string()),
+  last_played_at: z.string().nullable(),
+  play_settings: QuizPlaySettingsSchema,
+  cloned_from: z.string().nullable(),
+});
+
+// Publishing Response Schema
+export const PublishingResponseSchema = z.object({
+  message: z.string(),
+  quiz: QuizSetResponseSchema.optional(),
+  validation: QuizValidationResponseSchema.optional(),
+});
+
 // ============================================================================
 // ERROR TYPES
 // ============================================================================
@@ -384,3 +419,5 @@ export type UpdateQuestionInput = z.infer<typeof UpdateQuestionSchema>;
 export type CreateAnswerInput = z.infer<typeof CreateAnswerSchema>;
 export type UpdateAnswerInput = z.infer<typeof UpdateAnswerSchema>;
 export type ReorderQuestionsInput = z.infer<typeof ReorderQuestionsSchema>;
+export type QuizValidationResponse = z.infer<typeof QuizValidationResponseSchema>;
+export type PublishingResponse = z.infer<typeof PublishingResponseSchema>;
