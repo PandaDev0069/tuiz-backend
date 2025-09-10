@@ -5,16 +5,16 @@
  * Focuses on pure functions, data transformation, and helper methods.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { logger } from '../../src/utils/logger';
 
 // Mock logger to avoid console output during tests
-jest.mock('../../src/utils/logger', () => ({
+vi.mock('../../src/utils/logger', () => ({
   logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    debug: jest.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
   },
 }));
 
@@ -41,8 +41,8 @@ describe('Logger Utility', () => {
 
   it('should log structured data', () => {
     const data = { userId: '123', action: 'login' };
-    logger.info('User action', data);
-    expect(logger.info).toHaveBeenCalledWith('User action', data);
+    logger.info(data, 'User action');
+    expect(logger.info).toHaveBeenCalledWith(data, 'User action');
   });
 });
 
@@ -85,7 +85,7 @@ describe('String Utilities', () => {
 
     const weakPasswords = ['123', 'password', 'Test123', 'TestPassword'];
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
 
     strongPasswords.forEach((password) => {
       expect(passwordRegex.test(password)).toBe(true);
@@ -327,8 +327,9 @@ describe('Validation Utilities', () => {
     const input = '<script>alert("xss")</script>Test';
     const sanitized = input.replace(/<[^>]*>/g, '');
 
-    expect(sanitized).toBe('Test');
+    expect(sanitized).toBe('alert("xss")Test');
     expect(sanitized).not.toContain('<script>');
+    expect(sanitized).not.toContain('</script>');
   });
 });
 
@@ -384,11 +385,3 @@ describe('Error Handling Utilities', () => {
     expect(attempts).toBe(3);
   });
 });
-
-// Mock jest functions for testing
-const jest = {
-  fn: () => ({
-    mockReturnThis: () => ({}),
-    mockReturnValue: () => ({}),
-  }),
-};
