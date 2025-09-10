@@ -324,21 +324,70 @@ describe('Validation Utilities', () => {
     expect(typeof data.active).toBe('boolean');
   });
 
+  // Proper iterative sanitization to prevent bypass attacks
+  function sanitizeInput(input: string): string {
+    let sanitized = input;
+    let previous: string;
+
+    // Iterate until no more changes are made to ensure complete sanitization
+    do {
+      previous = sanitized;
+      sanitized = sanitized
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/javascript:/gi, '') // Remove javascript: protocol
+        .replace(/on\w+\s*=/gi, '') // Remove event handlers
+        .replace(/["']/g, '') // Remove quotes that could break out of attributes
+        .replace(/\.\.\//g, '') // Remove path traversal sequences
+        .replace(/\.\.\\/g, '') // Remove Windows path traversal sequences
+        .replace(/<!--.*?-->/g, '') // Remove HTML comments
+        .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove script tags more thoroughly
+        .replace(/alert\s*\([^)]*\)/gi, '') // Remove alert() calls
+        .replace(/eval\s*\([^)]*\)/gi, '') // Remove eval() calls
+        .replace(/document\s*\./gi, '') // Remove document object access
+        .replace(/window\s*\./gi, '') // Remove window object access
+        .trim();
+    } while (sanitized !== previous);
+
+    return sanitized;
+  }
+
   it('should sanitize input data', () => {
     const input = '<script>alert("xss")</script>Test';
-    // More comprehensive sanitization that removes all HTML tags and dangerous characters
-    const sanitized = input
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
-      .replace(/javascript:/gi, '') // Remove javascript: protocol
-      .replace(/on\w+\s*=/gi, '') // Remove event handlers
-      .replace(/["']/g, '') // Remove quotes that could break out of attributes
-      .trim();
+    const sanitized = sanitizeInput(input);
 
-    expect(sanitized).toBe('alert(xss)Test');
+    expect(sanitized).toBe('Test');
     expect(sanitized).not.toContain('<script>');
     expect(sanitized).not.toContain('</script>');
     expect(sanitized).not.toContain('javascript:');
     expect(sanitized).not.toContain('onclick=');
+    expect(sanitized).not.toContain('alert(');
+  });
+
+  it('should prevent bypass attacks with nested malicious content', () => {
+    // Test case from CodeQL alert: nested script tags that could bypass single-pass sanitization
+    const maliciousInput = '<scrip<script>is removed</script>t>alert(123)</script>';
+    const sanitized = sanitizeInput(maliciousInput);
+
+    expect(sanitized).not.toContain('<script>');
+    expect(sanitized).not.toContain('</script>');
+    expect(sanitized).not.toContain('alert(123)');
+  });
+
+  it('should handle HTML comments bypass attempts', () => {
+    // Test case from CodeQL alert: HTML comments that could bypass sanitization
+    const maliciousInput = '<!<!--- comment --->>';
+    const sanitized = sanitizeInput(maliciousInput);
+
+    expect(sanitized).not.toContain('<!--');
+    expect(sanitized).not.toContain('-->');
+  });
+
+  it('should handle path traversal bypass attempts', () => {
+    // Test case from CodeQL alert: path traversal that could bypass sanitization
+    const maliciousInput = '/./.././';
+    const sanitized = sanitizeInput(maliciousInput);
+
+    expect(sanitized).not.toContain('../');
   });
 });
 
