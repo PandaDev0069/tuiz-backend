@@ -1,9 +1,16 @@
 // src/app.ts
 import express from 'express';
 import { corsMw } from './config/cors';
+import { authMiddleware } from './middleware/auth';
 import { errorMw } from './middleware/error';
+import answerRoutes from './routes/answers';
 import authRoutes from './routes/auth';
+import codeRoutes from './routes/codes';
 import health from './routes/health';
+import publishingRoutes from './routes/publishing';
+import questionRoutes from './routes/questions';
+import quizRoutes from './routes/quiz';
+import { AuthenticatedRequest } from './types/auth';
 
 export function createApp() {
   const app = express();
@@ -25,6 +32,19 @@ export function createApp() {
   // routes
   app.use('/auth', authRoutes);
   app.use('/health', health);
+  app.use('/quiz', quizRoutes);
+  app.use('/quiz', questionRoutes);
+  app.use('/quiz', answerRoutes);
+  app.use('/quiz', publishingRoutes);
+  app.use('/quiz', codeRoutes);
+
+  // Example protected route - add your protected routes here
+  app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
+    res.json({
+      message: 'This is a protected route',
+      user: req.user,
+    });
+  });
 
   // 404 → unified error contract
   app.use((_req, res) => {

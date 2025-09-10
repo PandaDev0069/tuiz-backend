@@ -51,7 +51,7 @@ export default [
 
   // 7) Special rules for test files and config files
   {
-    files: ['tests/**/*.ts', 'vitest.config.ts'],
+    files: ['tests/**/*.ts', 'vitest.config.ts', 'vitest.ci.config.ts'],
     rules: {
       'import/no-unresolved': 'off',
       'n/no-missing-import': 'off',
