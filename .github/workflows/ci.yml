@@ -1,38 +1,126 @@
-permissions:
-  contents: read
-name: ci
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, feat/*]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  backend:
+  # Critical tests - always run
+  critical-tests:
+    name: Critical Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Use Node 22
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          node-version: '22'
+          cache: 'npm'
 
-      - name: Install deps
-        run: npm ci
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
-      - name: Typecheck
+      - name: Type check
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm run test
+      - name: Run critical tests
+        run: npx ts-node scripts/ci-test-runner.ts --strategy PR
+        env:
+          NODE_ENV: test
+          CI: true
+          # Supabase environment variables should be set in repository secrets
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+  # Unit tests - fast, no external dependencies
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run unit tests
+        run: npx ts-node scripts/ci-test-runner.ts --strategy LOCAL
+        env:
+          NODE_ENV: test
+          CI: true
+
+  # Integration tests - only on main branch and PRs to main
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.ref == 'refs/heads/main' || github.base_ref == 'main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run integration tests
+        run: npx ts-node scripts/ci-test-runner.ts --strategy MAIN_PUSH
+        env:
+          NODE_ENV: test
+          CI: true
+          # Supabase environment variables should be set in repository secrets
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+  # Build test - ensure code compiles
+  build-test:
+    name: Build Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
       - name: Build
         run: npm run build
+
+      - name: Verify build output
+        run: |
+          test -f dist/server.js
+          test -d dist/routes
+          test -d dist/lib

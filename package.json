@@ -22,7 +22,19 @@
     "format:write": "prettier . --write",
     "prepare": "husky",
     "test": "vitest --run",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "test:ci": "ts-node scripts/ci-test-runner.ts",
+    "test:critical": "vitest --run tests/health.test.ts tests/unit/validation.test.ts tests/unit/utils.test.ts tests/unit/auth-optimized.test.ts",
+    "test:high": "vitest --run tests/health.test.ts tests/unit/validation.test.ts tests/unit/utils.test.ts tests/unit/auth-optimized.test.ts tests/auth.test.ts tests/integration/auth-flow.test.ts tests/quiz.test.ts tests/integration/quiz-optimized.test.ts",
+    "test:unit": "vitest --run tests/unit/",
+    "test:integration": "vitest --run tests/integration/",
+    "test:auth": "vitest --run tests/auth.test.ts tests/integration/auth-flow.test.ts tests/unit/auth-optimized.test.ts",
+    "test:quiz": "vitest --run tests/quiz.test.ts tests/integration/quiz-optimized.test.ts tests/integration/quiz-management.test.ts",
+    "test:answers": "vitest --run tests/integration/answers.test.ts",
+    "test:questions": "vitest --run tests/integration/questions.test.ts",
+    "test:quick": "vitest --run tests/health.test.ts tests/unit/validation.test.ts tests/unit/utils.test.ts tests/not-found.test.ts",
+    "test:smoke": "vitest --run tests/health.test.ts tests/unit/validation.test.ts tests/unit/utils.test.ts",
+    "test:all": "vitest --run"
   },
   "engines": {
     "node": ">=22"
