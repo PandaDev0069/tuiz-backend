@@ -9,6 +9,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createApp } from '../../src/app';
 import { RateLimitHelper } from '../setup/rateLimitHelper';
 import { QuizDataFactory, QuestionDataFactory, AnswerDataFactory } from '../setup/testData';
+import { DifficultyLevel } from '../../src/types/quiz';
 
 describe('Quiz API Integration Tests (Rate-Limited)', () => {
   let app: ReturnType<typeof createApp>;
@@ -69,7 +70,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       const quizData = QuizDataFactory.createQuizSet({
         title: 'Test Quiz',
         description: 'A simple test quiz',
-        difficulty: 'MEDIUM',
+        difficulty: DifficultyLevel.MEDIUM,
         category: 'General Knowledge',
         tags: ['test'],
         is_public: true,
@@ -83,7 +84,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
         const { default: request } = await import('supertest');
         return request(app)
           .post('/quiz')
-          .set('Authorization', `Bearer ${testUser.access_token}`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`)
           .send(quizData);
       });
 
@@ -104,13 +105,13 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .get(`/quiz/${testQuiz.id}`)
-          .set('Authorization', `Bearer ${testUser.access_token}`);
+          .get(`/quiz/${testQuiz!.id}`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
       expect(response.status).toBe(200);
-      expect(response.body.id).toBe(testQuiz.id);
-      expect(response.body.title).toBe(testQuiz.title);
+      expect(response.body.id).toBe(testQuiz!.id);
+      expect(response.body.title).toBe(testQuiz!.title);
     });
 
     it('should update quiz details', async () => {
@@ -128,8 +129,8 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .put(`/quiz/${testQuiz.id}`)
-          .set('Authorization', `Bearer ${testUser.access_token}`)
+          .put(`/quiz/${testQuiz!.id}`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`)
           .send(updateData);
       });
 
@@ -153,30 +154,13 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
         order_index: 1,
         time_limit: 30,
         points: 10,
-        answers: [
-          {
-            answer_text: 'Paris',
-            is_correct: true,
-            order_index: 1,
-          },
-          {
-            answer_text: 'London',
-            is_correct: false,
-            order_index: 2,
-          },
-          {
-            answer_text: 'Berlin',
-            is_correct: false,
-            order_index: 3,
-          },
-        ],
       });
 
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .post(`/quiz/${testQuiz.id}/questions`)
-          .set('Authorization', `Bearer ${testUser.access_token}`)
+          .post(`/quiz/${testQuiz!.id}/questions`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`)
           .send(questionData);
       });
 
@@ -195,8 +179,8 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .get(`/quiz/${testQuiz.id}/questions`)
-          .set('Authorization', `Bearer ${testUser.access_token}`);
+          .get(`/quiz/${testQuiz!.id}/questions`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
       expect(response.status).toBe(200);

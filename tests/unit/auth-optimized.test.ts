@@ -90,7 +90,7 @@ describe('Authentication Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('auth', async () => {
         const { default: request } = await import('supertest');
         return request(app).post('/auth/login').send({
-          email: sharedTestUser.email,
+          email: sharedTestUser!.email,
           password: 'TestPassword123!',
         });
       });
@@ -112,7 +112,7 @@ describe('Authentication Tests (Rate-Limited)', () => {
       const loginResponse = await RateLimitHelper.executeWithRateLimit('auth', async () => {
         const { default: request } = await import('supertest');
         return request(app).post('/auth/login').send({
-          email: sharedTestUser.email,
+          email: sharedTestUser!.email,
           password: 'TestPassword123!',
         });
       });
