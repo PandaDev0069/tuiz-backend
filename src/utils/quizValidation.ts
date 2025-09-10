@@ -279,3 +279,63 @@ export function validateQuestionData(data: Record<string, unknown>): {
     errors,
   };
 }
+
+export function validateAnswerData(data: Record<string, unknown>): {
+  isValid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  // Validate answer text
+  if (
+    !data.answer_text ||
+    (data.answer_text as string).length < 1 ||
+    (data.answer_text as string).length > 200
+  ) {
+    errors.push('Answer text must be between 1 and 200 characters');
+  }
+
+  // Validate image URL if provided
+  if (data.image_url && !validateImageUrl(data.image_url as string)) {
+    errors.push('Invalid answer image URL format');
+  }
+
+  // Validate order index
+  if ((data.order_index as number) < 0) {
+    errors.push('Order index must be non-negative');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}
+
+export function validateReorderQuestionsData(data: Record<string, unknown>): {
+  isValid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  // Validate questionIds array
+  if (!Array.isArray(data.questionIds)) {
+    errors.push('questionIds must be an array');
+  } else if (data.questionIds.length === 0) {
+    errors.push('questionIds must not be empty');
+  } else {
+    // Validate each question ID is a valid UUID
+    data.questionIds.forEach((id: unknown, index: number) => {
+      if (
+        typeof id !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      ) {
+        errors.push(`questionIds[${index}] must be a valid UUID`);
+      }
+    });
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+  };
+}

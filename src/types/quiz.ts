@@ -303,6 +303,19 @@ export const UpdateQuestionSchema = z.object({
   answers: z.array(CreateAnswerSchema).min(2).max(4).optional(),
 });
 
+// Update Answer Schema
+export const UpdateAnswerSchema = z.object({
+  answer_text: z.string().min(1).max(200),
+  image_url: z.string().url().optional(),
+  is_correct: z.boolean(),
+  order_index: z.number().int().min(0),
+});
+
+// Reorder Questions Schema
+export const ReorderQuestionsSchema = z.object({
+  questionIds: z.array(z.string().uuid()).min(1),
+});
+
 // ============================================================================
 // ERROR TYPES
 // ============================================================================
@@ -369,3 +382,5 @@ export type UpdateQuizSetInput = z.infer<typeof UpdateQuizSetSchema>;
 export type CreateQuestionInput = z.infer<typeof CreateQuestionSchema>;
 export type UpdateQuestionInput = z.infer<typeof UpdateQuestionSchema>;
 export type CreateAnswerInput = z.infer<typeof CreateAnswerSchema>;
+export type UpdateAnswerInput = z.infer<typeof UpdateAnswerSchema>;
+export type ReorderQuestionsInput = z.infer<typeof ReorderQuestionsSchema>;
