@@ -359,7 +359,7 @@ describe('Validation Utilities', () => {
         // Remove dangerous object access
         .replace(/(?:document|window|parent|top|self)\s*\./gi, '')
         .trim();
-    } while (sanitized !== previous && sanitized.length > 0);
+    } while (sanitized !== previous);
 
     return sanitized;
   }
