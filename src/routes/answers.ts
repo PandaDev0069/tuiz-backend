@@ -117,6 +117,81 @@ async function getAnswerById(answerId: string, questionId: string): Promise<Answ
   }
 }
 
+async function fetchExistingAnswers(
+  questionId: string,
+  excludeAnswerId?: string,
+): Promise<{ data: { id: string; is_correct: boolean }[] | null; error: Error | null }> {
+  let query = supabaseAdmin.from('answers').select('id, is_correct').eq('question_id', questionId);
+
+  if (excludeAnswerId) {
+    query = query.neq('id', excludeAnswerId);
+  }
+
+  return await query;
+}
+
+function calculateAnswerCounts(
+  existingAnswers: { id: string; is_correct: boolean }[],
+  answerData: CreateAnswerInput,
+  excludeAnswerId?: string,
+): { totalAnswers: number; totalCorrectAnswers: number } {
+  const existingAnswerList = existingAnswers || [];
+  const correctAnswers = existingAnswerList.filter((answer) => answer.is_correct);
+
+  const totalAnswersAfterOperation = excludeAnswerId
+    ? existingAnswerList.length
+    : existingAnswerList.length + 1;
+
+  let totalCorrectAnswersAfterOperation = correctAnswers.length;
+
+  if (excludeAnswerId) {
+    // For updates: check if we're changing the correctness
+    const existingAnswer = existingAnswerList.find((a) => a.id === excludeAnswerId);
+    if (existingAnswer?.is_correct && !answerData.is_correct) {
+      totalCorrectAnswersAfterOperation--; // removing a correct answer
+    } else if (!existingAnswer?.is_correct && answerData.is_correct) {
+      totalCorrectAnswersAfterOperation++; // making an incorrect answer correct
+    }
+  } else {
+    // For creation: if the new answer is correct, add 1
+    if (answerData.is_correct) {
+      totalCorrectAnswersAfterOperation++;
+    }
+  }
+
+  return {
+    totalAnswers: totalAnswersAfterOperation,
+    totalCorrectAnswers: totalCorrectAnswersAfterOperation,
+  };
+}
+
+function validateQuestionTypeConstraints(
+  questionType: QuestionType,
+  totalAnswers: number,
+): { isValid: boolean; message?: string } {
+  if (questionType === QuestionType.TRUE_FALSE) {
+    if (totalAnswers > 2) {
+      return { isValid: false, message: 'True/False questions can only have 2 answers' };
+    }
+  } else if (questionType === QuestionType.MULTIPLE_CHOICE) {
+    if (totalAnswers > 4) {
+      return { isValid: false, message: 'Multiple choice questions can have at most 4 answers' };
+    }
+  }
+
+  return { isValid: true };
+}
+
+function validateCorrectAnswerConstraint(totalCorrectAnswers: number): {
+  isValid: boolean;
+  message?: string;
+} {
+  if (totalCorrectAnswers !== 1) {
+    return { isValid: false, message: 'Must have exactly one correct answer' };
+  }
+  return { isValid: true };
+}
+
 async function validateAnswerConstraints(
   questionId: string,
   answerData: CreateAnswerInput,
@@ -124,16 +199,10 @@ async function validateAnswerConstraints(
 ): Promise<{ isValid: boolean; message?: string }> {
   try {
     // Get existing answers for this question
-    let query = supabaseAdmin
-      .from('answers')
-      .select('id, is_correct')
-      .eq('question_id', questionId);
-
-    if (excludeAnswerId) {
-      query = query.neq('id', excludeAnswerId);
-    }
-
-    const { data: existingAnswers, error } = await query;
+    const { data: existingAnswers, error } = await fetchExistingAnswers(
+      questionId,
+      excludeAnswerId,
+    );
 
     if (error) {
       logger.error({ error, questionId }, 'Error fetching existing answers');
@@ -146,49 +215,23 @@ async function validateAnswerConstraints(
       return { isValid: false, message: 'Question not found' };
     }
 
-    const existingAnswerList = existingAnswers || [];
-    const correctAnswers = existingAnswerList.filter((answer) => answer.is_correct);
+    // Calculate answer counts after the operation
+    const { totalAnswers, totalCorrectAnswers } = calculateAnswerCounts(
+      existingAnswers || [],
+      answerData,
+      excludeAnswerId,
+    );
 
-    // For answer creation (no excludeAnswerId), check total answers after addition
-    // For answer updates (with excludeAnswerId), check total answers after update
-    const totalAnswersAfterOperation = excludeAnswerId
-      ? existingAnswerList.length
-      : existingAnswerList.length + 1;
-
-    // For correct answers, count existing correct answers
-    // If the new/updated answer will be correct, add 1
-    // If we're updating an existing correct answer to incorrect, subtract 1
-    let totalCorrectAnswersAfterOperation = correctAnswers.length;
-
-    if (excludeAnswerId) {
-      // For updates: check if we're changing the correctness
-      const existingAnswer = existingAnswerList.find((a) => a.id === excludeAnswerId);
-      if (existingAnswer?.is_correct && !answerData.is_correct) {
-        totalCorrectAnswersAfterOperation--; // removing a correct answer
-      } else if (!existingAnswer?.is_correct && answerData.is_correct) {
-        totalCorrectAnswersAfterOperation++; // making an incorrect answer correct
-      }
-    } else {
-      // For creation: if the new answer is correct, add 1
-      if (answerData.is_correct) {
-        totalCorrectAnswersAfterOperation++;
-      }
+    // Validate question type constraints
+    const typeValidation = validateQuestionTypeConstraints(question.question_type, totalAnswers);
+    if (!typeValidation.isValid) {
+      return typeValidation;
     }
 
-    // Validate based on question type
-    if (question.question_type === QuestionType.TRUE_FALSE) {
-      if (totalAnswersAfterOperation > 2) {
-        return { isValid: false, message: 'True/False questions can only have 2 answers' };
-      }
-    } else if (question.question_type === QuestionType.MULTIPLE_CHOICE) {
-      if (totalAnswersAfterOperation > 4) {
-        return { isValid: false, message: 'Multiple choice questions can have at most 4 answers' };
-      }
-    }
-
-    // Must have exactly one correct answer after the operation
-    if (totalCorrectAnswersAfterOperation !== 1) {
-      return { isValid: false, message: 'Must have exactly one correct answer' };
+    // Validate correct answer constraint
+    const correctAnswerValidation = validateCorrectAnswerConstraint(totalCorrectAnswers);
+    if (!correctAnswerValidation.isValid) {
+      return correctAnswerValidation;
     }
 
     return { isValid: true };
