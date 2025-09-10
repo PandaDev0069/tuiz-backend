@@ -350,8 +350,8 @@ describe('Validation Utilities', () => {
         .replace(/%252e%252e/gi, '')
         // Remove HTML comments (including multiline)
         .replace(/<!--[\s\S]*?-->/g, '')
-        // Remove script tags with comprehensive pattern
-        .replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+        // Remove script tags with comprehensive pattern (accept any junk after script end tag name)
+        .replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script[^\>]*\s*>/gi, '')
         // Remove dangerous function calls more thoroughly
         .replace(/(?:alert|eval|setTimeout|setInterval)\s*\([^)]*\)/gi, '')
         // Remove parentheses that could contain function calls
