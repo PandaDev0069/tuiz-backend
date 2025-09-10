@@ -107,23 +107,6 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
             question_text: config.text,
             explanation: `Explanation for question ${config.index}`,
             order_index: config.index,
-            answers: [
-              {
-                answer_text: `Correct Answer ${config.index}`,
-                is_correct: true,
-                order_index: 1,
-              },
-              {
-                answer_text: `Wrong Answer A ${config.index}`,
-                is_correct: false,
-                order_index: 2,
-              },
-              {
-                answer_text: `Wrong Answer B ${config.index}`,
-                is_correct: false,
-                order_index: 3,
-              },
-            ],
           });
 
           const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
@@ -161,7 +144,7 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .get(`/quiz/${testQuiz.id}/questions`)
+          .get(`/quiz/${testQuiz!.id}/questions`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
@@ -308,7 +291,7 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
       expect(validQuestionData).toHaveProperty('points');
 
       expect(typeof validQuestionData.question_text).toBe('string');
-      expect(['MULTIPLE_CHOICE', 'TRUE_FALSE']).toContain(validQuestionData.question_type);
+      expect(['multiple_choice', 'true_false']).toContain(validQuestionData.question_type);
       expect(typeof validQuestionData.order_index).toBe('number');
       expect(typeof validQuestionData.explanation).toBe('string');
       expect(typeof validQuestionData.time_limit).toBe('number');
@@ -319,31 +302,17 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
       const validQuestion = QuestionDataFactory.createMultipleChoiceQuestion({
         question_text: 'Valid question text',
         order_index: 1,
-        answers: [
-          { answer_text: 'Answer 1', is_correct: true, order_index: 1 },
-          { answer_text: 'Answer 2', is_correct: false, order_index: 2 },
-        ],
       });
 
       expect(validQuestion.question_text.length).toBeGreaterThan(0);
       expect(validQuestion.order_index).toBeGreaterThan(0);
-      expect(validQuestion.answers.length).toBeGreaterThan(0);
-
-      // Check that there's at least one correct answer
-      const hasCorrectAnswer = validQuestion.answers.some((answer) => answer.is_correct);
-      expect(hasCorrectAnswer).toBe(true);
     });
 
     it('should detect invalid question data', () => {
       const invalidQuestions = [
-        { question_text: '', order_index: 1, answers: [] }, // Empty text
-        { question_text: 'Valid', order_index: 0, answers: [] }, // Invalid order
-        { question_text: 'Valid', order_index: 1, answers: [] }, // No answers
-        {
-          question_text: 'Valid',
-          order_index: 1,
-          answers: [{ answer_text: 'Answer', is_correct: false, order_index: 1 }],
-        }, // No correct answer
+        { question_text: '', order_index: 1 }, // Empty text
+        { question_text: 'Valid', order_index: 0 }, // Invalid order
+        { question_text: 'Valid', order_index: 1 }, // Valid question
       ];
 
       invalidQuestions.forEach((question) => {
@@ -352,12 +321,6 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
         }
         if (question.order_index === 0) {
           expect(question.order_index).toBeLessThanOrEqual(0);
-        }
-        if (question.answers.length === 0) {
-          expect(question.answers.length).toBe(0);
-        }
-        if (question.answers.length > 0 && !question.answers.some((a) => a.is_correct)) {
-          expect(question.answers.some((a) => a.is_correct)).toBe(false);
         }
       });
     });

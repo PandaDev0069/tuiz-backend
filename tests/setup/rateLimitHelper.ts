@@ -36,6 +36,7 @@ export class RateLimitHelper {
   private static lastResetTime = Date.now();
   private static userPool: string[] = [];
   private static maxPoolSize = 3; // Keep only 3 users in pool for free plan
+  private static testMode = false; // Bypass rate limits in test mode
 
   /**
    * Reset counters every minute
@@ -51,9 +52,26 @@ export class RateLimitHelper {
   }
 
   /**
+   * Enable test mode to bypass rate limits
+   */
+  static enableTestMode(): void {
+    this.testMode = true;
+    logger.debug('Rate limit test mode enabled - bypassing rate limits');
+  }
+
+  /**
+   * Disable test mode
+   */
+  static disableTestMode(): void {
+    this.testMode = false;
+    logger.debug('Rate limit test mode disabled');
+  }
+
+  /**
    * Check if we can make an auth request
    */
   static canMakeAuthRequest(): boolean {
+    if (this.testMode) return true;
     this.resetCountersIfNeeded();
     return this.requestCounts.auth < RATE_LIMITS.AUTH_REQUESTS_PER_MINUTE;
   }
@@ -62,6 +80,7 @@ export class RateLimitHelper {
    * Check if we can create a new user
    */
   static canCreateUser(): boolean {
+    if (this.testMode) return true;
     this.resetCountersIfNeeded();
     return this.requestCounts.userCreation < RATE_LIMITS.USER_CREATION_PER_MINUTE;
   }
@@ -70,6 +89,7 @@ export class RateLimitHelper {
    * Check if we can make a database request
    */
   static canMakeDatabaseRequest(): boolean {
+    if (this.testMode) return true;
     this.resetCountersIfNeeded();
     return this.requestCounts.database < RATE_LIMITS.DATABASE_REQUESTS_PER_MINUTE;
   }
@@ -136,13 +156,16 @@ export class RateLimitHelper {
     retryCount = 0,
   ): Promise<T> {
     try {
-      // Check if we can proceed
-      if (operation === 'auth' && !this.canMakeAuthRequest()) {
-        await this.waitForRateLimitReset('auth');
-      } else if (operation === 'userCreation' && !this.canCreateUser()) {
-        await this.waitForRateLimitReset('userCreation');
-      } else if (operation === 'database' && !this.canMakeDatabaseRequest()) {
-        await this.waitForRateLimitReset('database');
+      // Skip rate limiting in test mode
+      if (!this.testMode) {
+        // Check if we can proceed
+        if (operation === 'auth' && !this.canMakeAuthRequest()) {
+          await this.waitForRateLimitReset('auth');
+        } else if (operation === 'userCreation' && !this.canCreateUser()) {
+          await this.waitForRateLimitReset('userCreation');
+        } else if (operation === 'database' && !this.canMakeDatabaseRequest()) {
+          await this.waitForRateLimitReset('database');
+        }
       }
 
       // Execute the function

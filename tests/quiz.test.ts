@@ -261,13 +261,13 @@ describe('Answer API', () => {
       // Create two answers for delete tests
       const answer1Data = {
         answer_text: '3',
-        is_correct: false,
+        is_correct: true,
         order_index: 0,
       };
 
       const answer2Data = {
         answer_text: '4',
-        is_correct: true,
+        is_correct: false,
         order_index: 1,
       };
 
@@ -276,15 +276,31 @@ describe('Answer API', () => {
         .set('Authorization', `Bearer ${authToken}`)
         .send(answer1Data);
 
-      await request(app)
+      if (response1.status !== 201) {
+        console.log('Answer creation failed:', response1.status, response1.body);
+        throw new Error(
+          `Answer creation failed: ${response1.status} - ${JSON.stringify(response1.body)}`,
+        );
+      }
+
+      const response2 = await request(app)
         .post(`/quiz/${quizId}/questions/${questionId}/answers`)
         .set('Authorization', `Bearer ${authToken}`)
         .send(answer2Data);
 
+      if (response2.status !== 201) {
+        console.log('Answer creation failed:', response2.status, response2.body);
+        throw new Error(
+          `Answer creation failed: ${response2.status} - ${JSON.stringify(response2.body)}`,
+        );
+      }
+
       answerId = response1.body.id;
+      console.log('Answer ID set to:', answerId);
     });
 
     it('should delete answer successfully', async () => {
+      console.log('Attempting to delete answer:', answerId);
       await request(app)
         .delete(`/quiz/${quizId}/questions/${questionId}/answers/${answerId}`)
         .set('Authorization', `Bearer ${authToken}`)
@@ -299,23 +315,27 @@ describe('Answer API', () => {
     });
 
     it('should reject delete of last answer', async () => {
-      // First delete one answer
-      await request(app)
-        .delete(`/quiz/${quizId}/questions/${questionId}/answers/${answerId}`)
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(204);
-
-      // Get the remaining answer ID
-      const { data: answers } = await supabaseAdmin
+      // Get all answers first
+      const { data: allAnswers } = await supabaseAdmin
         .from('answers')
         .select('id')
         .eq('question_id', questionId);
 
-      const remainingAnswerId = answers?.[0]?.id;
+      const answerIds = allAnswers?.map((a) => a.id) || [];
+      expect(answerIds.length).toBe(2); // Should have 2 answers
 
-      // Try to delete the last answer
+      // Delete the first answer
       await request(app)
-        .delete(`/quiz/${quizId}/questions/${questionId}/answers/${remainingAnswerId}`)
+        .delete(`/quiz/${quizId}/questions/${questionId}/answers/${answerIds[0]}`)
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(204);
+
+      // Wait a moment for the deletion to complete
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Now try to delete the remaining answer (should fail)
+      await request(app)
+        .delete(`/quiz/${quizId}/questions/${questionId}/answers/${answerIds[1]}`)
         .set('Authorization', `Bearer ${authToken}`)
         .expect(400);
     });

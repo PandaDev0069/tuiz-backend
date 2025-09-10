@@ -14,7 +14,7 @@ import type { DifficultyLevel, QuizStatus, QuestionType } from '../../src/types/
 export interface TestQuizSetData {
   title: string;
   description: string;
-  difficulty: DifficultyLevel;
+  difficulty_level: DifficultyLevel;
   category: string;
   tags: string[];
   is_public: boolean;
@@ -63,7 +63,7 @@ export class QuizDataFactory {
     return {
       title: `Test Quiz ${this.counter}`,
       description: `This is a test quiz created for testing purposes. Quiz #${this.counter}`,
-      difficulty: 'MEDIUM' as DifficultyLevel,
+      difficulty_level: 'medium' as DifficultyLevel,
       category: 'General Knowledge',
       tags: ['test', 'sample'],
       is_public: true,
@@ -74,7 +74,7 @@ export class QuizDataFactory {
         shuffle_questions: true,
         shuffle_answers: true,
       },
-      status: 'DRAFT' as QuizStatus,
+      status: 'draft' as QuizStatus,
       thumbnail_url: `https://example.com/quiz-${this.counter}.jpg`,
       ...overrides,
     };
@@ -85,7 +85,7 @@ export class QuizDataFactory {
    */
   static createEasyQuiz(overrides: Partial<TestQuizSetData> = {}): TestQuizSetData {
     return this.createQuizSet({
-      difficulty: 'EASY' as DifficultyLevel,
+      difficulty_level: 'easy' as DifficultyLevel,
       title: `Easy Quiz ${this.counter}`,
       ...overrides,
     });
@@ -96,7 +96,7 @@ export class QuizDataFactory {
    */
   static createHardQuiz(overrides: Partial<TestQuizSetData> = {}): TestQuizSetData {
     return this.createQuizSet({
-      difficulty: 'HARD' as DifficultyLevel,
+      difficulty_level: 'hard' as DifficultyLevel,
       title: `Hard Quiz ${this.counter}`,
       ...overrides,
     });
@@ -107,7 +107,7 @@ export class QuizDataFactory {
    */
   static createPublishedQuiz(overrides: Partial<TestQuizSetData> = {}): TestQuizSetData {
     return this.createQuizSet({
-      status: 'PUBLISHED' as QuizStatus,
+      status: 'published' as QuizStatus,
       is_public: true,
       ...overrides,
     });
@@ -119,7 +119,7 @@ export class QuizDataFactory {
   static createPrivateQuiz(overrides: Partial<TestQuizSetData> = {}): TestQuizSetData {
     return this.createQuizSet({
       is_public: false,
-      status: 'DRAFT' as QuizStatus,
+      status: 'draft' as QuizStatus,
       ...overrides,
     });
   }
@@ -167,7 +167,7 @@ export class QuestionDataFactory {
 
     return {
       question_text: `What is the capital of Test Country ${this.counter}?`,
-      question_type: 'MULTIPLE_CHOICE' as QuestionType,
+      question_type: 'multiple_choice' as QuestionType,
       explanation: `The capital of Test Country ${this.counter} is Test City.`,
       order_index: this.counter,
       time_limit: 30,
@@ -185,7 +185,7 @@ export class QuestionDataFactory {
 
     return {
       question_text: `Test statement ${this.counter} is true.`,
-      question_type: 'TRUE_FALSE' as QuestionType,
+      question_type: 'true_false' as QuestionType,
       explanation: `This statement is true because of test reason ${this.counter}.`,
       order_index: this.counter,
       time_limit: 15,

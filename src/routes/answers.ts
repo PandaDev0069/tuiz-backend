@@ -46,11 +46,11 @@ async function getQuizById(
 async function getQuestionById(
   questionId: string,
   quizId: string,
-): Promise<{ id: string; question_type: QuestionType } | null> {
+): Promise<{ id: string; question_type: QuestionType; question_set_id: string } | null> {
   try {
     const { data, error } = await supabaseAdmin
       .from('questions')
-      .select('id, question_type')
+      .select('id, question_type, question_set_id')
       .eq('id', questionId)
       .eq('question_set_id', quizId)
       .maybeSingle();
@@ -63,6 +63,28 @@ async function getQuestionById(
     return data;
   } catch (error) {
     logger.error({ error, questionId, quizId }, 'Exception in getQuestionById');
+    return null;
+  }
+}
+
+async function getQuestionByIdOnly(
+  questionId: string,
+): Promise<{ id: string; question_type: QuestionType; question_set_id: string } | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('questions')
+      .select('id, question_type, question_set_id')
+      .eq('id', questionId)
+      .maybeSingle();
+
+    if (error) {
+      logger.error({ error, questionId }, 'Error fetching question by ID');
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    logger.error({ error, questionId }, 'Exception in getQuestionByIdOnly');
     return null;
   }
 }
@@ -112,7 +134,7 @@ async function validateAnswerConstraints(
     }
 
     // Get question type
-    const question = await getQuestionById(questionId, ''); // We'll get quizId from question
+    const question = await getQuestionByIdOnly(questionId);
     if (!question) {
       return { isValid: false, message: 'Question not found' };
     }
@@ -379,39 +401,36 @@ router.delete(
         } as QuizError);
       }
 
-      // Check if this is the last answer
-      const { count, error: countError } = await supabaseAdmin
-        .from('answers')
-        .select('*', { count: 'exact', head: true })
-        .eq('question_id', questionId);
-
-      if (countError) {
-        logger.error({ error: countError, questionId }, 'Error counting answers');
-        return res.status(500).json({
-          error: 'delete_failed',
-          message: 'Failed to count answers',
-        } as QuizError);
-      }
-
-      if (count && count <= 1) {
-        return res.status(400).json({
-          error: 'validation_error',
-          message: 'Cannot delete the last answer. A question must have at least one answer.',
-        } as QuizError);
-      }
-
-      // Delete answer
-      const { error } = await supabaseAdmin
-        .from('answers')
-        .delete()
-        .eq('id', answerId)
-        .eq('question_id', questionId);
+      // Delete answer with atomic constraint check using a stored procedure
+      // This will prevent race conditions by doing the check and delete atomically
+      const { data: deleteResult, error } = await supabaseAdmin.rpc(
+        'delete_answer_with_constraint_check',
+        {
+          p_answer_id: answerId,
+          p_question_id: questionId,
+        },
+      );
 
       if (error) {
+        // Check if it's our constraint violation
+        if (error.message && error.message.includes('Cannot delete the last answer')) {
+          return res.status(400).json({
+            error: 'validation_error',
+            message: 'Cannot delete the last answer. A question must have at least one answer.',
+          } as QuizError);
+        }
+
         logger.error({ error, answerId, questionId, quizId, userId }, 'Error deleting answer');
         return res.status(500).json({
           error: 'delete_failed',
           message: 'Failed to delete answer',
+        } as QuizError);
+      }
+
+      if (!deleteResult) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Answer not found',
         } as QuizError);
       }
 

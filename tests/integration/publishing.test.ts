@@ -208,7 +208,7 @@ describe('Publishing Workflow Integration Tests (Rate-Limited)', () => {
       // Check that quiz has required fields for publishing
       expect(quizData.title).toBeTruthy();
       expect(quizData.description).toBeTruthy();
-      expect(quizData.difficulty).toBeTruthy();
+      expect(quizData.difficulty_level).toBeTruthy();
       expect(quizData.category).toBeTruthy();
       expect(quizData.tags).toBeTruthy();
       expect(Array.isArray(quizData.tags)).toBe(true);

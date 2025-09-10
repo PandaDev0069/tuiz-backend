@@ -286,7 +286,7 @@ describe('Quiz Management Integration Tests (Rate-Limited)', () => {
 
       expect(validQuizData).toHaveProperty('title');
       expect(validQuizData).toHaveProperty('description');
-      expect(validQuizData).toHaveProperty('difficulty');
+      expect(validQuizData).toHaveProperty('difficulty_level');
       expect(validQuizData).toHaveProperty('category');
       expect(validQuizData).toHaveProperty('tags');
       expect(validQuizData).toHaveProperty('is_public');
@@ -294,7 +294,7 @@ describe('Quiz Management Integration Tests (Rate-Limited)', () => {
 
       expect(typeof validQuizData.title).toBe('string');
       expect(typeof validQuizData.description).toBe('string');
-      expect(['EASY', 'MEDIUM', 'HARD']).toContain(validQuizData.difficulty);
+      expect(['easy', 'medium', 'hard']).toContain(validQuizData.difficulty_level);
       expect(Array.isArray(validQuizData.tags)).toBe(true);
       expect(typeof validQuizData.is_public).toBe('boolean');
     });

@@ -70,7 +70,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       const quizData = QuizDataFactory.createQuizSet({
         title: 'Test Quiz',
         description: 'A simple test quiz',
-        difficulty: DifficultyLevel.MEDIUM,
+        difficulty_level: DifficultyLevel.MEDIUM,
         category: 'General Knowledge',
         tags: ['test'],
         is_public: true,
@@ -194,7 +194,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
 
       expect(validQuizData).toHaveProperty('title');
       expect(validQuizData).toHaveProperty('description');
-      expect(validQuizData).toHaveProperty('difficulty');
+      expect(validQuizData).toHaveProperty('difficulty_level');
       expect(validQuizData).toHaveProperty('category');
       expect(validQuizData).toHaveProperty('tags');
       expect(validQuizData).toHaveProperty('is_public');
@@ -202,7 +202,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
 
       expect(typeof validQuizData.title).toBe('string');
       expect(typeof validQuizData.description).toBe('string');
-      expect(['EASY', 'MEDIUM', 'HARD']).toContain(validQuizData.difficulty);
+      expect(['easy', 'medium', 'hard']).toContain(validQuizData.difficulty_level);
       expect(Array.isArray(validQuizData.tags)).toBe(true);
       expect(typeof validQuizData.is_public).toBe('boolean');
     });
@@ -215,7 +215,7 @@ describe('Quiz API Integration Tests (Rate-Limited)', () => {
       expect(validQuestionData).toHaveProperty('order_index');
 
       expect(typeof validQuestionData.question_text).toBe('string');
-      expect(['MULTIPLE_CHOICE', 'TRUE_FALSE']).toContain(validQuestionData.question_type);
+      expect(['multiple_choice', 'true_false']).toContain(validQuestionData.question_type);
       expect(typeof validQuestionData.order_index).toBe('number');
     });
 

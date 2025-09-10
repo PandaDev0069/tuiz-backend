@@ -77,18 +77,36 @@ export class TestAuth {
       // Profile is automatically created by the handle_new_user() trigger
       // No need to manually insert into profiles table
 
-      // Sign in the user to get access token
-      const { data: signInData, error: signInError } =
-        await this.supabaseClient.auth.signInWithPassword({
+      // Wait a moment for the profile creation trigger to complete
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Sign in the user to get access token with retry
+      let signInData, signInError;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      do {
+        const signInResult = await this.supabaseClient.auth.signInWithPassword({
           email,
           password,
         });
+        signInData = signInResult.data;
+        signInError = signInResult.error;
+
+        if (signInError || !signInData.session) {
+          retryCount++;
+          if (retryCount < maxRetries) {
+            logger.debug(`Sign in attempt ${retryCount} failed, retrying in 2 seconds...`);
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+      } while ((signInError || !signInData.session) && retryCount < maxRetries);
 
       if (signInError || !signInData.session) {
         // Clean up the user if sign in fails
         await this.supabaseAdmin.auth.admin.deleteUser(authData.user.id);
         throw new Error(
-          `Failed to sign in test user: ${signInError?.message || 'No session data'}`,
+          `Failed to sign in test user after ${maxRetries} attempts: ${signInError?.message || 'No session data'}`,
         );
       }
 

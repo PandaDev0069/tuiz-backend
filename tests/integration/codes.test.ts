@@ -25,10 +25,10 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
   afterAll(async () => {
     // Clean up test data
     if (testUser) {
-      console.log(`Would clean up user: ${testUser.email}`);
+      console.log(`Would clean up user: ${testUser?.email}`);
     }
     if (testQuiz) {
-      console.log(`Would clean up quiz: ${testQuiz.id}`);
+      console.log(`Would clean up quiz: ${testQuiz!.id}`);
     }
   });
 
@@ -94,8 +94,8 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .post(`/quiz/${testQuiz.id}/generate-code`)
-          .set('Authorization', `Bearer ${testUser.access_token}`);
+          .post(`/quiz/${testQuiz!.id}/generate-code`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
       expect(response.status).toBe(201);
@@ -116,7 +116,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const generateResponse = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .post(`/quiz/${testQuiz.id}/generate-code`)
+          .post(`/quiz/${testQuiz!.id}/generate-code`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
@@ -150,8 +150,8 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .get(`/quiz/${testQuiz.id}/code`)
-          .set('Authorization', `Bearer ${testUser.access_token}`);
+          .get(`/quiz/${testQuiz!.id}/code`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
       // Should return either a code or indicate no code exists
@@ -173,7 +173,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const generateResponse = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .post(`/quiz/${testQuiz.id}/generate-code`)
+          .post(`/quiz/${testQuiz!.id}/generate-code`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
@@ -187,8 +187,8 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .delete(`/quiz/${testQuiz.id}/code`)
-          .set('Authorization', `Bearer ${testUser.access_token}`);
+          .delete(`/quiz/${testQuiz!.id}/code`)
+          .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
       expect(response.status).toBe(200);
@@ -256,14 +256,16 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const { default: request } = await import('supertest');
       const response = await request(app)
         .post('/quiz/invalid-id/generate-code')
-        .set('Authorization', `Bearer ${testUser.access_token}`);
+        .set('Authorization', `Bearer ${testUser!.access_token}`);
 
       expect(response.status).toBe(404);
     });
 
     it('should handle checking non-existent code', async () => {
       const { default: request } = await import('supertest');
-      const response = await request(app).get('/quiz/code/check/123456');
+      // Use a more unique code that's unlikely to exist
+      const uniqueCode = Math.floor(Math.random() * 900000) + 100000;
+      const response = await request(app).get(`/quiz/code/check/${uniqueCode}`);
 
       expect(response.status).toBe(200);
       expect(response.body.isAvailable).toBe(true);
@@ -278,8 +280,8 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
 
       const { default: request } = await import('supertest');
       const response = await request(app)
-        .delete(`/quiz/${testQuiz.id}/code`)
-        .set('Authorization', `Bearer ${testUser.access_token}`);
+        .delete(`/quiz/${testQuiz!.id}/code`)
+        .set('Authorization', `Bearer ${testUser!.access_token}`);
 
       // Should either succeed (idempotent) or return not found
       expect([200, 404]).toContain(response.status);
@@ -298,7 +300,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const generateResponse = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .post(`/quiz/${testQuiz.id}/generate-code`)
+          .post(`/quiz/${testQuiz!.id}/generate-code`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
@@ -323,7 +325,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const getResponse = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .get(`/quiz/${testQuiz.id}/code`)
+          .get(`/quiz/${testQuiz!.id}/code`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
@@ -334,7 +336,7 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
       const removeResponse = await RateLimitHelper.executeWithRateLimit('database', async () => {
         const { default: request } = await import('supertest');
         return request(app)
-          .delete(`/quiz/${testQuiz.id}/code`)
+          .delete(`/quiz/${testQuiz!.id}/code`)
           .set('Authorization', `Bearer ${testUser!.access_token}`);
       });
 
