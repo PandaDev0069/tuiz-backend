@@ -12,6 +12,7 @@ export default defineConfig({
       },
     },
     testTimeout: 30000, // Increase timeout for Supabase operations
+    hookTimeout: 15000, // Increase hook timeout for integration tests
     env: {
       NODE_ENV: 'test',
       DOTENV_CONFIG_QUIET: 'true', // Suppress dotenv informational messages

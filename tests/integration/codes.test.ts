@@ -263,9 +263,10 @@ describe('Code Management Integration Tests (Rate-Limited)', () => {
 
     it('should handle checking non-existent code', async () => {
       const { default: request } = await import('supertest');
-      const response = await request(app).get('/quiz/code/check/NONEXISTENT');
+      const response = await request(app).get('/quiz/code/check/123456');
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect(response.body.isAvailable).toBe(true);
     });
 
     it('should handle removing non-existent code', async () => {

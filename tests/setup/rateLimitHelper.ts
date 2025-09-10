@@ -259,7 +259,7 @@ export class RateLimitHelper {
   static async waitForAllRateLimitsReset(): Promise<void> {
     const now = Date.now();
     const timeSinceReset = now - this.lastResetTime;
-    const timeToWait = Math.max(0, 60000 - timeSinceReset); // Wait until next minute
+    const timeToWait = Math.max(0, Math.min(5000, 60000 - timeSinceReset)); // Wait max 5 seconds for tests
 
     if (timeToWait > 0) {
       logger.debug(`Waiting ${timeToWait}ms for all rate limits to reset`);

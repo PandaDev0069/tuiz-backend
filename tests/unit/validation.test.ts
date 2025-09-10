@@ -141,7 +141,7 @@ describe('Validation Schemas', () => {
       const validData = {
         title: 'Test Quiz',
         description: 'A test quiz for validation',
-        difficulty: 'MEDIUM',
+        difficulty_level: 'medium',
         category: 'General Knowledge',
         tags: ['test', 'validation'],
         is_public: true,
@@ -160,7 +160,7 @@ describe('Validation Schemas', () => {
       const invalidData = {
         title: '',
         description: 'A test quiz',
-        difficulty: 'MEDIUM',
+        difficulty: 'medium',
         category: 'General Knowledge',
         tags: ['test'],
         is_public: true,
@@ -187,13 +187,13 @@ describe('Validation Schemas', () => {
     });
 
     it('should accept valid difficulty levels', () => {
-      const difficulties = ['EASY', 'MEDIUM', 'HARD'];
+      const difficulties = ['easy', 'medium', 'hard'];
 
       for (const difficulty of difficulties) {
         const validData = {
           title: 'Test Quiz',
           description: 'A test quiz',
-          difficulty,
+          difficulty_level: difficulty,
           category: 'General Knowledge',
           tags: ['test'],
           is_public: true,
@@ -210,11 +210,15 @@ describe('Validation Schemas', () => {
     it('should validate correct question data', () => {
       const validData = {
         question_text: 'What is the capital of France?',
-        question_type: 'MULTIPLE_CHOICE',
-        explanation: 'Paris is the capital of France.',
-        order_index: 1,
-        time_limit: 30,
+        question_type: 'multiple_choice',
+        show_question_time: 30,
+        answering_time: 60,
         points: 10,
+        difficulty: 'medium',
+        order_index: 1,
+        explanation_title: 'Explanation',
+        explanation_text: 'Paris is the capital of France.',
+        show_explanation_time: 30,
         image_url: 'https://example.com/image.jpg',
         answers: [
           {
@@ -238,7 +242,7 @@ describe('Validation Schemas', () => {
     it('should reject empty question text', () => {
       const invalidData = {
         question_text: '',
-        question_type: 'MULTIPLE_CHOICE',
+        question_type: 'multiple_choice',
         order_index: 1,
         answers: [],
       };
@@ -260,14 +264,30 @@ describe('Validation Schemas', () => {
     });
 
     it('should accept valid question types', () => {
-      const questionTypes = ['MULTIPLE_CHOICE', 'TRUE_FALSE'];
+      const questionTypes = ['multiple_choice', 'true_false'];
 
       for (const questionType of questionTypes) {
         const validData = {
           question_text: 'What is the capital?',
           question_type: questionType,
+          show_question_time: 30,
+          answering_time: 60,
+          points: 10,
+          difficulty: 'medium',
           order_index: 1,
-          answers: [],
+          show_explanation_time: 30,
+          answers: [
+            {
+              answer_text: 'Answer 1',
+              is_correct: true,
+              order_index: 1,
+            },
+            {
+              answer_text: 'Answer 2',
+              is_correct: false,
+              order_index: 2,
+            },
+          ],
         };
 
         const result = CreateQuestionSchema.safeParse(validData);
@@ -315,25 +335,29 @@ describe('Validation Schemas', () => {
   describe('ReorderQuestionsSchema', () => {
     it('should validate correct reorder data', () => {
       const validData = {
-        question_ids: ['id1', 'id2', 'id3'],
+        questionIds: [
+          '550e8400-e29b-41d4-a716-446655440000',
+          '550e8400-e29b-41d4-a716-446655440001',
+          '550e8400-e29b-41d4-a716-446655440002',
+        ],
       };
 
       const result = ReorderQuestionsSchema.safeParse(validData);
       expect(result.success).toBe(true);
     });
 
-    it('should reject empty question_ids array', () => {
+    it('should reject empty questionIds array', () => {
       const invalidData = {
-        question_ids: [],
+        questionIds: [],
       };
 
       const result = ReorderQuestionsSchema.safeParse(invalidData);
       expect(result.success).toBe(false);
     });
 
-    it('should reject non-array question_ids', () => {
+    it('should reject non-array questionIds', () => {
       const invalidData = {
-        question_ids: 'not-an-array',
+        questionIds: 'not-an-array',
       };
 
       const result = ReorderQuestionsSchema.safeParse(invalidData);

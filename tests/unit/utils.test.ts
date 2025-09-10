@@ -81,17 +81,18 @@ describe('String Utilities', () => {
   });
 
   it('should validate password strength', () => {
-    const strongPasswords = ['TestPassword123!', 'MyStr0ng#Pass', 'ComplexP@ssw0rd'];
+    const validPasswords = ['password123', 'Test123', 'MyPassword', 'ComplexPass123'];
 
-    const weakPasswords = ['123', 'password', 'Test123', 'TestPassword'];
+    const invalidPasswords = ['123', 'pass', ''];
 
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).{8,}$/;
+    // Match the actual validation schema: minimum 6 characters
+    const passwordRegex = /^.{6,}$/;
 
-    strongPasswords.forEach((password) => {
+    validPasswords.forEach((password) => {
       expect(passwordRegex.test(password)).toBe(true);
     });
 
-    weakPasswords.forEach((password) => {
+    invalidPasswords.forEach((password) => {
       expect(passwordRegex.test(password)).toBe(false);
     });
   });

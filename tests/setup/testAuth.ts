@@ -74,20 +74,8 @@ export class TestAuth {
         throw new Error('User creation returned no user data');
       }
 
-      // Create profile in the database
-      const { error: profileError } = await this.supabaseAdmin.from('profiles').insert({
-        id: authData.user.id,
-        email,
-        username,
-        display_name: displayName,
-        role,
-      });
-
-      if (profileError) {
-        // Clean up the auth user if profile creation fails
-        await this.supabaseAdmin.auth.admin.deleteUser(authData.user.id);
-        throw new Error(`Failed to create user profile: ${profileError.message}`);
-      }
+      // Profile is automatically created by the handle_new_user() trigger
+      // No need to manually insert into profiles table
 
       // Sign in the user to get access token
       const { data: signInData, error: signInError } =

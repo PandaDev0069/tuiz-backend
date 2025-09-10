@@ -303,12 +303,16 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
       expect(validQuestionData).toHaveProperty('question_text');
       expect(validQuestionData).toHaveProperty('question_type');
       expect(validQuestionData).toHaveProperty('order_index');
-      expect(validQuestionData).toHaveProperty('answers');
+      expect(validQuestionData).toHaveProperty('explanation');
+      expect(validQuestionData).toHaveProperty('time_limit');
+      expect(validQuestionData).toHaveProperty('points');
 
       expect(typeof validQuestionData.question_text).toBe('string');
       expect(['MULTIPLE_CHOICE', 'TRUE_FALSE']).toContain(validQuestionData.question_type);
       expect(typeof validQuestionData.order_index).toBe('number');
-      expect(Array.isArray(validQuestionData.answers)).toBe(true);
+      expect(typeof validQuestionData.explanation).toBe('string');
+      expect(typeof validQuestionData.time_limit).toBe('number');
+      expect(typeof validQuestionData.points).toBe('number');
     });
 
     it('should validate question constraints', () => {
@@ -363,15 +367,16 @@ describe('Question Management Integration Tests (Rate-Limited)', () => {
     it('should handle unauthorized access to question operations', async () => {
       const { default: request } = await import('supertest');
       const response = await request(app)
-        .get('/quiz/invalid-id/questions')
-        .set('Authorization', 'Bearer invalid-token');
+        .post('/quiz/invalid-id/questions')
+        .set('Authorization', 'Bearer invalid-token')
+        .send({});
 
       expect(response.status).toBe(401);
     });
 
     it('should handle missing authorization header', async () => {
       const { default: request } = await import('supertest');
-      const response = await request(app).get('/quiz/invalid-id/questions');
+      const response = await request(app).post('/quiz/invalid-id/questions').send({});
 
       expect(response.status).toBe(401);
     });

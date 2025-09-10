@@ -4,6 +4,7 @@ import request from 'supertest';
 import { createApp } from '../src/app';
 import { supabaseAdmin } from '../src/lib/supabase';
 import { QuestionType, DifficultyLevel } from '../src/types/quiz';
+import { createTestUser, cleanupTestUsers } from './setup';
 
 const app = createApp();
 
@@ -13,20 +14,36 @@ describe('Answer API', () => {
   let quizId: string;
   let questionId: string;
   let answerId: string;
+  const createdUserIds: string[] = [];
 
   beforeEach(async () => {
     // Create a test user and get auth token
+    const testUserData = createTestUser('quiz-test');
+
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email: 'test@example.com',
-      password: 'testpassword123',
+      email: testUserData.email,
+      password: testUserData.password,
       email_confirm: true,
     });
 
     if (authError) throw authError;
     userId = authData.user.id;
+    createdUserIds.push(userId);
 
-    // Get auth token - using a mock token for testing
-    authToken = 'mock-jwt-token-for-testing';
+    // Profile is automatically created by trigger, no need to insert manually
+
+    // Sign in to get real auth token
+    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+      email: testUserData.email,
+      password: testUserData.password,
+    });
+
+    if (signInError || !signInData.session) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      throw new Error('Failed to sign in test user');
+    }
+
+    authToken = signInData.session.access_token;
 
     // Create a test quiz
     const { data: quizData, error: quizError } = await supabaseAdmin
@@ -84,8 +101,9 @@ describe('Answer API', () => {
     if (quizId) {
       await supabaseAdmin.from('quiz_sets').delete().eq('id', quizId);
     }
-    if (userId) {
-      await supabaseAdmin.auth.admin.deleteUser(userId);
+    if (createdUserIds.length > 0) {
+      await cleanupTestUsers(createdUserIds);
+      createdUserIds.length = 0;
     }
   });
 
