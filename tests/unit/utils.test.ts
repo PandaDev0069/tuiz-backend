@@ -333,20 +333,33 @@ describe('Validation Utilities', () => {
     do {
       previous = sanitized;
       sanitized = sanitized
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .replace(/javascript:/gi, '') // Remove javascript: protocol
-        .replace(/on\w+\s*=/gi, '') // Remove event handlers
-        .replace(/["']/g, '') // Remove quotes that could break out of attributes
-        .replace(/\.\.\//g, '') // Remove path traversal sequences
-        .replace(/\.\.\\/g, '') // Remove Windows path traversal sequences
-        .replace(/<!--.*?-->/g, '') // Remove HTML comments
-        .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove script tags more thoroughly
-        .replace(/alert\s*\([^)]*\)/gi, '') // Remove alert() calls
-        .replace(/eval\s*\([^)]*\)/gi, '') // Remove eval() calls
-        .replace(/document\s*\./gi, '') // Remove document object access
-        .replace(/window\s*\./gi, '') // Remove window object access
+        // Remove all HTML tags including malformed ones
+        .replace(/<[^>]*>?/gs, '')
+        // Remove dangerous URL schemes comprehensively
+        .replace(/(?:javascript|data|vbscript):/gi, '')
+        // Remove event handlers with more thorough pattern
+        .replace(/\s*on\w+\s*=\s*[^>\s]*/gi, '')
+        // Remove quotes that could break out of attributes
+        .replace(/["'`]/g, '')
+        // Remove all path traversal sequences (including encoded variants)
+        .replace(/\.\.[\\/]/g, '')
+        .replace(/%2e%2e[\\/]/gi, '')
+        .replace(/%252e%252e[\\/]/gi, '')
+        // Remove URL encoded sequences that could be path traversal
+        .replace(/%2e%2e/gi, '')
+        .replace(/%252e%252e/gi, '')
+        // Remove HTML comments (including multiline)
+        .replace(/<!--[\s\S]*?-->/g, '')
+        // Remove script tags with comprehensive pattern
+        .replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi, '')
+        // Remove dangerous function calls more thoroughly
+        .replace(/(?:alert|eval|setTimeout|setInterval)\s*\([^)]*\)/gi, '')
+        // Remove parentheses that could contain function calls
+        .replace(/\([^)]*\)/g, '')
+        // Remove dangerous object access
+        .replace(/(?:document|window|parent|top|self)\s*\./gi, '')
         .trim();
-    } while (sanitized !== previous);
+    } while (sanitized !== previous && sanitized.length > 0);
 
     return sanitized;
   }
@@ -359,35 +372,104 @@ describe('Validation Utilities', () => {
     expect(sanitized).not.toContain('<script>');
     expect(sanitized).not.toContain('</script>');
     expect(sanitized).not.toContain('javascript:');
+    expect(sanitized).not.toContain('data:');
+    expect(sanitized).not.toContain('vbscript:');
     expect(sanitized).not.toContain('onclick=');
     expect(sanitized).not.toContain('alert(');
   });
 
   it('should prevent bypass attacks with nested malicious content', () => {
     // Test case from CodeQL alert: nested script tags that could bypass single-pass sanitization
-    const maliciousInput = '<scrip<script>is removed</script>t>alert(123)</script>';
-    const sanitized = sanitizeInput(maliciousInput);
+    const maliciousInputs = [
+      '<scrip<script>is removed</script>t>alert(123)</script>',
+      '<img src=x onerror=alert(1)>',
+      'javascript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'vbscript:alert(1)',
+      '<iframe src="javascript:alert(1)"></iframe>',
+    ];
 
-    expect(sanitized).not.toContain('<script>');
-    expect(sanitized).not.toContain('</script>');
-    expect(sanitized).not.toContain('alert(123)');
+    maliciousInputs.forEach((input) => {
+      const sanitized = sanitizeInput(input);
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('</script>');
+      expect(sanitized).not.toContain('alert(');
+      expect(sanitized).not.toContain('javascript:');
+      expect(sanitized).not.toContain('data:');
+      expect(sanitized).not.toContain('vbscript:');
+      expect(sanitized).not.toContain('onerror=');
+      expect(sanitized).not.toContain('<iframe');
+    });
   });
 
   it('should handle HTML comments bypass attempts', () => {
     // Test case from CodeQL alert: HTML comments that could bypass sanitization
-    const maliciousInput = '<!<!--- comment --->>';
-    const sanitized = sanitizeInput(maliciousInput);
+    const maliciousInputs = [
+      '<!<!--- comment --->',
+      '<!-- comment -->',
+      '<!--\nmalicious\ncontent\n-->',
+      '<!--[if IE]><script>alert(1)</script><![endif]-->',
+    ];
 
-    expect(sanitized).not.toContain('<!--');
-    expect(sanitized).not.toContain('-->');
+    maliciousInputs.forEach((input) => {
+      const sanitized = sanitizeInput(input);
+      expect(sanitized).not.toContain('<!--');
+      expect(sanitized).not.toContain('-->');
+      expect(sanitized).not.toContain('<script>');
+      expect(sanitized).not.toContain('alert(');
+    });
   });
 
   it('should handle path traversal bypass attempts', () => {
     // Test case from CodeQL alert: path traversal that could bypass sanitization
-    const maliciousInput = '/./.././';
-    const sanitized = sanitizeInput(maliciousInput);
+    const maliciousInputs = [
+      '/./.././',
+      '../../../etc/passwd',
+      '..\\..\\windows\\system32',
+      '%2e%2e%2f',
+      '%252e%252e%252f',
+    ];
 
-    expect(sanitized).not.toContain('../');
+    maliciousInputs.forEach((input) => {
+      const sanitized = sanitizeInput(input);
+      expect(sanitized).not.toContain('../');
+      expect(sanitized).not.toContain('..\\');
+      expect(sanitized).not.toContain('%2e%2e');
+      expect(sanitized).not.toContain('%252e%252e');
+    });
+  });
+
+  it('should handle comprehensive XSS prevention', () => {
+    const xssAttempts = [
+      '<img src=x onerror=alert(1)>',
+      '<svg onload=alert(1)>',
+      '<iframe src=javascript:alert(1)></iframe>',
+      '<object data="data:text/html,<script>alert(1)</script>">',
+      '<embed src=vbscript:alert(1)>',
+      'javascript:void(0)',
+      'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+      '<script>document.cookie</script>',
+      '<script>window.location</script>',
+      'setTimeout("alert(1)", 100)',
+      'setInterval("alert(1)", 100)',
+    ];
+
+    xssAttempts.forEach((attempt) => {
+      const sanitized = sanitizeInput(attempt);
+
+      // Ensure no dangerous patterns remain
+      expect(sanitized).not.toMatch(/<[^>]*>/);
+      expect(sanitized).not.toMatch(/javascript:/i);
+      expect(sanitized).not.toMatch(/data:/i);
+      expect(sanitized).not.toMatch(/vbscript:/i);
+      expect(sanitized).not.toMatch(/on\w+\s*=/i);
+      expect(sanitized).not.toMatch(/alert\s*\(/i);
+      expect(sanitized).not.toMatch(/eval\s*\(/i);
+      expect(sanitized).not.toMatch(/setTimeout\s*\(/i);
+      expect(sanitized).not.toMatch(/setInterval\s*\(/i);
+      expect(sanitized).not.toMatch(/document\s*\./i);
+      expect(sanitized).not.toMatch(/window\s*\./i);
+    });
   });
 });
 
