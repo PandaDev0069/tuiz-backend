@@ -501,36 +501,18 @@ router.delete(
         } as QuizError);
       }
 
-      // Delete answer with atomic constraint check using a stored procedure
-      // This will prevent race conditions by doing the check and delete atomically
-      const { data: deleteResult, error } = await supabaseAdmin.rpc(
-        'delete_answer_with_constraint_check',
-        {
-          p_answer_id: answerId,
-          p_question_id: questionId,
-        },
-      );
+      // Delete answer directly - no constraint checking
+      const { error } = await supabaseAdmin
+        .from('answers')
+        .delete()
+        .eq('id', answerId)
+        .eq('question_id', questionId);
 
       if (error) {
-        // Check if it's our constraint violation
-        if (error.message && error.message.includes('Cannot delete the last answer')) {
-          return res.status(400).json({
-            error: 'validation_error',
-            message: 'Cannot delete the last answer. A question must have at least one answer.',
-          } as QuizError);
-        }
-
         logger.error({ error, answerId, questionId, quizId, userId }, 'Error deleting answer');
         return res.status(500).json({
           error: 'delete_failed',
           message: 'Failed to delete answer',
-        } as QuizError);
-      }
-
-      if (!deleteResult) {
-        return res.status(404).json({
-          error: 'not_found',
-          message: 'Answer not found',
         } as QuizError);
       }
 
