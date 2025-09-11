@@ -96,7 +96,7 @@ describe('Authentication Tests (Rate-Limited)', () => {
       const response = await RateLimitHelper.executeWithRateLimit('auth', async () => {
         const { default: request } = await import('supertest');
         return request(app).post('/auth/login').send({
-          email: sharedTestUserData.email,
+          email: sharedTestUserData!.email,
           password: 'TestPassword123!',
         });
       });
