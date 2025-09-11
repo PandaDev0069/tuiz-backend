@@ -247,7 +247,6 @@ export const CreateQuizSetSchema = z.object({
 
 // Update Quiz Set Schema
 export const UpdateQuizSetSchema = z.object({
-  id: z.string().uuid(),
   title: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
   thumbnail_url: z.string().url().optional(),
