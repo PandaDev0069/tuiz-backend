@@ -10,6 +10,7 @@ import health from './routes/health';
 import publishingRoutes from './routes/publishing';
 import questionRoutes from './routes/questions';
 import quizRoutes from './routes/quiz';
+import uploadRoutes from './routes/upload';
 import { AuthenticatedRequest } from './types/auth';
 
 export function createApp() {
@@ -32,6 +33,7 @@ export function createApp() {
   // routes
   app.use('/auth', authRoutes);
   app.use('/health', health);
+  app.use('/upload', uploadRoutes);
   app.use('/quiz', quizRoutes);
   app.use('/quiz', questionRoutes);
   app.use('/quiz', answerRoutes);

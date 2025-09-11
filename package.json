@@ -44,10 +44,12 @@
   "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.55.0",
+    "@types/multer": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
+    "multer": "^2.0.2",
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",
     "socket.io": "^4.8.1",
