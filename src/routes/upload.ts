@@ -141,4 +141,196 @@ router.post(
   },
 );
 
+// ============================================================================
+// UPLOAD QUESTION IMAGE
+// ============================================================================
+
+/**
+ * POST /upload/question-image/:quizId
+ * Upload image for a question
+ */
+router.post(
+  '/question-image/:quizId',
+  authMiddleware,
+  upload.single('image'),
+  async (req: MulterRequest, res) => {
+    try {
+      const { quizId } = req.params;
+      const userId = req.user!.id;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({
+          error: 'no_file',
+          message: 'No file provided',
+        });
+      }
+
+      // Verify quiz ownership
+      const { data: quiz, error: quizError } = await supabaseAdmin
+        .from('quiz_sets')
+        .select('user_id')
+        .eq('id', quizId)
+        .single();
+
+      if (quizError || !quiz) {
+        logger.error({ error: quizError, quizId, userId }, 'Quiz not found');
+        return res.status(404).json({
+          error: 'quiz_not_found',
+          message: 'Quiz not found',
+        });
+      }
+
+      if (quiz.user_id !== userId) {
+        logger.warn(
+          { quizId, userId, ownerId: quiz.user_id },
+          'User not authorized to upload to this quiz',
+        );
+        return res.status(403).json({
+          error: 'not_authorized',
+          message: 'Not authorized to upload to this quiz',
+        });
+      }
+
+      // Generate file path
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 15);
+      const extension = file.originalname.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${timestamp}-${randomString}.${extension}`;
+      const filePath = `${userId}/quiz-${quizId}/questions/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        .from('quiz-images')
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        logger.error({ error: uploadError, filePath, userId }, 'Failed to upload question image');
+        return res.status(500).json({
+          error: 'upload_failed',
+          message: 'Failed to upload question image',
+        });
+      }
+
+      // Get public URL
+      const { data: urlData } = supabaseAdmin.storage
+        .from('quiz-images')
+        .getPublicUrl(uploadData.path);
+
+      logger.info({ quizId, userId, filePath }, 'Question image uploaded successfully');
+
+      res.status(200).json({
+        url: urlData.publicUrl,
+        path: uploadData.path,
+      });
+    } catch (error) {
+      logger.error({ error, userId: req.user?.id }, 'Error uploading question image');
+      res.status(500).json({
+        error: 'server_error',
+        message: 'Internal server error',
+      });
+    }
+  },
+);
+
+// ============================================================================
+// UPLOAD ANSWER IMAGE
+// ============================================================================
+
+/**
+ * POST /upload/answer-image/:quizId
+ * Upload image for an answer
+ */
+router.post(
+  '/answer-image/:quizId',
+  authMiddleware,
+  upload.single('image'),
+  async (req: MulterRequest, res) => {
+    try {
+      const { quizId } = req.params;
+      const userId = req.user!.id;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).json({
+          error: 'no_file',
+          message: 'No file provided',
+        });
+      }
+
+      // Verify quiz ownership
+      const { data: quiz, error: quizError } = await supabaseAdmin
+        .from('quiz_sets')
+        .select('user_id')
+        .eq('id', quizId)
+        .single();
+
+      if (quizError || !quiz) {
+        logger.error({ error: quizError, quizId, userId }, 'Quiz not found');
+        return res.status(404).json({
+          error: 'quiz_not_found',
+          message: 'Quiz not found',
+        });
+      }
+
+      if (quiz.user_id !== userId) {
+        logger.warn(
+          { quizId, userId, ownerId: quiz.user_id },
+          'User not authorized to upload to this quiz',
+        );
+        return res.status(403).json({
+          error: 'not_authorized',
+          message: 'Not authorized to upload to this quiz',
+        });
+      }
+
+      // Generate file path
+      const timestamp = Date.now();
+      const randomString = Math.random().toString(36).substring(2, 15);
+      const extension = file.originalname.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `${timestamp}-${randomString}.${extension}`;
+      const filePath = `${userId}/quiz-${quizId}/answers/${fileName}`;
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+        .from('quiz-images')
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        logger.error({ error: uploadError, filePath, userId }, 'Failed to upload answer image');
+        return res.status(500).json({
+          error: 'upload_failed',
+          message: 'Failed to upload answer image',
+        });
+      }
+
+      // Get public URL
+      const { data: urlData } = supabaseAdmin.storage
+        .from('quiz-images')
+        .getPublicUrl(uploadData.path);
+
+      logger.info({ quizId, userId, filePath }, 'Answer image uploaded successfully');
+
+      res.status(200).json({
+        url: urlData.publicUrl,
+        path: uploadData.path,
+      });
+    } catch (error) {
+      logger.error({ error, userId: req.user?.id }, 'Error uploading answer image');
+      res.status(500).json({
+        error: 'server_error',
+        message: 'Internal server error',
+      });
+    }
+  },
+);
+
 export default router;
