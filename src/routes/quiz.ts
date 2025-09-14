@@ -23,6 +23,101 @@ const router = express.Router();
 // HELPER FUNCTIONS
 // ============================================================================
 
+/**
+ * Clean up all images related to a quiz before hard deletion
+ */
+async function cleanupQuizImages(quizId: string): Promise<void> {
+  try {
+    logger.info({ quizId }, 'Starting image cleanup for quiz');
+    const imagePaths: string[] = [];
+
+    // Get quiz thumbnail
+    const { data: quizData } = await supabaseAdmin
+      .from('quiz_sets')
+      .select('thumbnail_url')
+      .eq('id', quizId)
+      .single();
+
+    if (quizData?.thumbnail_url) {
+      const thumbnailPath = extractStoragePathFromUrl(quizData.thumbnail_url);
+      if (thumbnailPath) imagePaths.push(thumbnailPath);
+    }
+
+    // Get all question images
+    const { data: questionsData } = await supabaseAdmin
+      .from('questions')
+      .select('id, image_url, explanation_image_url')
+      .eq('question_set_id', quizId);
+
+    if (questionsData) {
+      for (const question of questionsData) {
+        if (question.image_url) {
+          const imagePath = extractStoragePathFromUrl(question.image_url);
+          if (imagePath) imagePaths.push(imagePath);
+        }
+        if (question.explanation_image_url) {
+          const explanationPath = extractStoragePathFromUrl(question.explanation_image_url);
+          if (explanationPath) imagePaths.push(explanationPath);
+        }
+      }
+    }
+
+    // Get all answer images
+    if (questionsData && questionsData.length > 0) {
+      const questionIds = questionsData.map((q) => q.id);
+      const { data: answersData } = await supabaseAdmin
+        .from('answers')
+        .select('image_url')
+        .in('question_id', questionIds);
+
+      if (answersData) {
+        for (const answer of answersData) {
+          if (answer.image_url) {
+            const answerPath = extractStoragePathFromUrl(answer.image_url);
+            if (answerPath) imagePaths.push(answerPath);
+          }
+        }
+      }
+    }
+
+    // Delete all collected images from storage
+    if (imagePaths.length > 0) {
+      const { error: deleteError } = await supabaseAdmin.storage
+        .from('quiz-images')
+        .remove(imagePaths);
+
+      if (deleteError) {
+        logger.error(
+          { error: deleteError, quizId, imagePaths },
+          'Error deleting quiz images from storage',
+        );
+      } else {
+        logger.info(
+          { quizId, deletedCount: imagePaths.length },
+          'Successfully deleted quiz images',
+        );
+      }
+    }
+  } catch (error) {
+    logger.error({ error, quizId }, 'Exception during quiz image cleanup');
+    // Don't throw - we want the quiz deletion to proceed even if image cleanup fails
+  }
+}
+
+/**
+ * Extract storage path from Supabase storage URL
+ */
+function extractStoragePathFromUrl(imageUrl: string): string | null {
+  if (!imageUrl) return null;
+
+  // Extract path from Supabase storage URL
+  // URL format: https://[project].supabase.co/storage/v1/object/public/quiz-images/[path]
+  const match = imageUrl.match(
+    /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/quiz-images\/(.+)$/,
+  );
+  return match ? match[1] : null;
+}
+
 async function getQuizById(quizId: string, userId?: string): Promise<QuizSetResponse | null> {
   try {
     const { data, error } = await supabaseAdmin
@@ -455,7 +550,18 @@ router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => 
       } as QuizError);
     }
 
-    // Delete quiz (cascade will handle questions and answers)
+    // Clean up all images before deleting the quiz
+    try {
+      await cleanupQuizImages(id);
+    } catch (error) {
+      logger.error(
+        { error, quizId: id },
+        'Failed to cleanup images, proceeding with quiz deletion',
+      );
+      // Continue with deletion even if image cleanup fails
+    }
+
+    // Delete quiz (hard delete)
     const { error } = await supabaseAdmin
       .from('quiz_sets')
       .delete()
@@ -470,7 +576,7 @@ router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => 
       } as QuizError);
     }
 
-    logger.info({ quizId: id, userId }, 'Quiz deleted successfully');
+    logger.info({ quizId: id, userId }, 'Quiz and associated images deleted successfully');
 
     res.status(204).send();
   } catch (error) {
