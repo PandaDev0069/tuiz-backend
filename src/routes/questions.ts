@@ -12,6 +12,7 @@ import {
   UpdateQuestionInput,
   QuestionType,
   DifficultyLevel,
+  QuestionWithAnswers,
 } from '../types/quiz';
 import { logger } from '../utils/logger';
 import { validateRequest } from '../utils/quizValidation';
@@ -304,7 +305,7 @@ async function updateQuestionAnswers(
   questionId: string,
   answers: Array<{
     answer_text: string;
-    image_url?: string;
+    image_url?: string | null;
     is_correct: boolean;
     order_index: number;
   }>,
@@ -571,6 +572,141 @@ router.put('/:quizId/questions/reorder', authMiddleware, async (req: Authenticat
     logger.error(
       { error, quizId: req.params.quizId },
       'Exception in PUT /quiz/:quizId/questions/reorder',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
+// ============================================================================
+// BATCH QUESTION OPERATIONS
+// ============================================================================
+
+// POST /quiz/:quizId/questions/batch - Batch save questions for editing
+router.post('/:quizId/questions/batch', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user!.id;
+    const { questions } = req.body;
+
+    // Verify quiz exists and user owns it
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found or you do not have permission to modify it',
+      } as QuizError);
+    }
+
+    if (!Array.isArray(questions)) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        message: 'Questions must be an array',
+      } as QuizError);
+    }
+
+    // Delete all existing questions for this quiz
+    const { error: deleteError } = await supabaseAdmin
+      .from('questions')
+      .delete()
+      .eq('question_set_id', quizId);
+
+    if (deleteError) {
+      logger.error({ error: deleteError, quizId, userId }, 'Error deleting existing questions');
+      return res.status(500).json({
+        error: 'delete_failed',
+        message: 'Failed to delete existing questions',
+      } as QuizError);
+    }
+
+    // Insert new questions
+    const savedQuestions: QuestionWithAnswers[] = [];
+
+    for (const questionData of questions) {
+      // Basic validation for question data
+      if (!questionData.question_text || !questionData.question_type) {
+        return res.status(400).json({
+          error: 'validation_error',
+          message: 'Question text and type are required',
+        } as QuizError);
+      }
+
+      // Create question
+      const { data: question, error: questionError } = await supabaseAdmin
+        .from('questions')
+        .insert({
+          question_set_id: quizId,
+          question_text: questionData.question_text,
+          question_type: questionData.question_type,
+          image_url: questionData.image_url || null,
+          show_question_time: questionData.show_question_time,
+          answering_time: questionData.answering_time,
+          points: questionData.points,
+          difficulty: questionData.difficulty,
+          order_index: questionData.order_index,
+          explanation_title: questionData.explanation_title || null,
+          explanation_text: questionData.explanation_text || null,
+          explanation_image_url: questionData.explanation_image_url || null,
+          show_explanation_time: questionData.show_explanation_time,
+        })
+        .select()
+        .single();
+
+      if (questionError) {
+        logger.error({ error: questionError, quizId, userId }, 'Error creating question');
+        return res.status(500).json({
+          error: 'create_failed',
+          message: 'Failed to create question',
+        } as QuizError);
+      }
+
+      // Create answers for this question
+      const answers = [];
+      for (const answerData of questionData.answers || []) {
+        const { data: answer, error: answerError } = await supabaseAdmin
+          .from('answers')
+          .insert({
+            question_id: question.id,
+            answer_text: answerData.answer_text,
+            image_url: answerData.image_url ?? null,
+            is_correct: answerData.is_correct,
+            order_index: answerData.order_index,
+          })
+          .select()
+          .single();
+
+        if (answerError) {
+          logger.error({ error: answerError, questionId: question.id }, 'Error creating answer');
+          return res.status(500).json({
+            error: 'create_failed',
+            message: 'Failed to create answer',
+          } as QuizError);
+        }
+
+        answers.push(answer);
+      }
+
+      savedQuestions.push({
+        ...question,
+        answers,
+      });
+    }
+
+    // Update quiz question count
+    await updateQuizQuestionCount(quizId);
+
+    logger.info(
+      { quizId, userId, questionCount: savedQuestions.length },
+      'Questions batch saved successfully',
+    );
+
+    res.json(savedQuestions);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.quizId },
+      'Exception in POST /quiz/:quizId/questions/batch',
     );
     res.status(500).json({
       error: 'internal_error',

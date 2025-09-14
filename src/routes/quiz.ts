@@ -621,4 +621,189 @@ router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// ============================================================================
+// QUIZ EDITING ENDPOINTS
+// ============================================================================
+
+// GET /quiz/:id/edit - Get quiz data for editing
+router.get('/:id/edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    // Verify quiz exists and user owns it
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found or you do not have permission to edit it',
+      } as QuizError);
+    }
+
+    // Get questions with answers for editing
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('questions')
+      .select(
+        `
+        *,
+        answers (*)
+      `,
+      )
+      .eq('question_set_id', quizId)
+      .order('order_index', { ascending: true });
+
+    if (questionsError) {
+      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions for edit');
+      return res.status(500).json({
+        error: 'fetch_failed',
+        message: 'Failed to fetch questions for editing',
+      } as QuizError);
+    }
+
+    // Format the response to match QuizSetComplete structure
+    const response = {
+      ...quiz,
+      questions: questions || [],
+    };
+
+    logger.info(
+      { quizId, userId, questionCount: questions?.length || 0 },
+      'Quiz data fetched for editing',
+    );
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      'Exception in GET /quiz/:id/edit',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
+// PATCH /quiz/:id/draft - Set quiz to draft status for editing
+router.patch('/:id/draft', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    // Verify quiz exists and user owns it
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found or you do not have permission to edit it',
+      } as QuizError);
+    }
+
+    // Update quiz status to draft
+    const { error: updateError } = await supabaseAdmin
+      .from('quiz_sets')
+      .update({
+        status: 'draft',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', quizId)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      logger.error({ error: updateError, quizId, userId }, 'Error setting quiz to draft');
+      return res.status(500).json({
+        error: 'update_failed',
+        message: 'Failed to set quiz to draft status',
+      } as QuizError);
+    }
+
+    logger.info({ quizId, userId }, 'Quiz set to draft for editing');
+    res.json({
+      id: quizId,
+      status: 'draft',
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      'Exception in PATCH /quiz/:id/draft',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
+// PATCH /quiz/:id/publish - Publish edited quiz
+router.patch('/:id/publish', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    // Verify quiz exists and user owns it
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found or you do not have permission to publish it',
+      } as QuizError);
+    }
+
+    // Check if quiz has questions
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('questions')
+      .select('id')
+      .eq('question_set_id', quizId);
+
+    if (questionsError) {
+      logger.error({ error: questionsError, quizId, userId }, 'Error checking questions');
+      return res.status(500).json({
+        error: 'fetch_failed',
+        message: 'Failed to check quiz questions',
+      } as QuizError);
+    }
+
+    if (!questions || questions.length === 0) {
+      return res.status(400).json({
+        error: 'validation_error',
+        message: 'Quiz must have at least one question to be published',
+      } as QuizError);
+    }
+
+    // Update quiz status to published
+    const { error: updateError } = await supabaseAdmin
+      .from('quiz_sets')
+      .update({
+        status: 'published',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', quizId)
+      .eq('user_id', userId);
+
+    if (updateError) {
+      logger.error({ error: updateError, quizId, userId }, 'Error publishing quiz');
+      return res.status(500).json({
+        error: 'update_failed',
+        message: 'Failed to publish quiz',
+      } as QuizError);
+    }
+
+    logger.info({ quizId, userId, questionCount: questions.length }, 'Quiz published successfully');
+    res.json({
+      id: quizId,
+      status: 'published',
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      'Exception in PATCH /quiz/:id/publish',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
 export default router;
