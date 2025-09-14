@@ -43,6 +43,117 @@ async function getQuizById(quizId: string, userId?: string): Promise<QuizSetResp
   }
 }
 
+interface QuestionWithAnswers {
+  id: string;
+  question_text: string;
+  question_type: string;
+  image_url: string | null;
+  show_question_time: boolean;
+  answering_time: number;
+  points: number;
+  difficulty: string;
+  order_index: number;
+  explanation_title: string | null;
+  explanation_text: string | null;
+  explanation_image_url: string | null;
+  show_explanation_time: boolean;
+  answers: {
+    id: string;
+    answer_text: string;
+    image_url: string | null;
+    is_correct: boolean;
+    order_index: number;
+  }[];
+}
+
+async function getCompleteQuizForEdit(
+  quizId: string,
+  userId: string,
+): Promise<(QuizSetResponse & { questions: QuestionWithAnswers[] }) | null> {
+  try {
+    // First get the quiz data
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz || quiz.user_id !== userId) {
+      return null;
+    }
+
+    // Get questions for this quiz
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('questions')
+      .select(
+        `
+        id,
+        question_text,
+        question_type,
+        image_url,
+        show_question_time,
+        answering_time,
+        points,
+        difficulty,
+        order_index,
+        explanation_title,
+        explanation_text,
+        explanation_image_url,
+        show_explanation_time,
+        answers (
+          id,
+          answer_text,
+          image_url,
+          is_correct,
+          order_index
+        )
+      `,
+      )
+      .eq('question_set_id', quizId)
+      .order('order_index');
+
+    if (questionsError) {
+      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions for edit');
+      return null;
+    }
+
+    // Transform the data to match the expected format
+    const transformedQuestions = questions.map((q) => ({
+      id: q.id,
+      question_text: q.question_text,
+      question_type: q.question_type,
+      image_url: q.image_url,
+      show_question_time: q.show_question_time,
+      answering_time: q.answering_time,
+      points: q.points,
+      difficulty: q.difficulty,
+      order_index: q.order_index,
+      explanation_title: q.explanation_title,
+      explanation_text: q.explanation_text,
+      explanation_image_url: q.explanation_image_url,
+      show_explanation_time: q.show_explanation_time,
+      answers: q.answers.map(
+        (a: {
+          id: string;
+          answer_text: string;
+          image_url: string | null;
+          is_correct: boolean;
+          order_index: number;
+        }) => ({
+          id: a.id,
+          answer_text: a.answer_text,
+          image_url: a.image_url,
+          is_correct: a.is_correct,
+          order_index: a.order_index,
+        }),
+      ),
+    }));
+
+    return {
+      ...quiz,
+      questions: transformedQuestions,
+    };
+  } catch (error) {
+    logger.error({ error, quizId, userId }, 'Exception in getCompleteQuizForEdit');
+    return null;
+  }
+}
+
 // ============================================================================
 // QUIZ CRUD ROUTES
 // ============================================================================
@@ -134,6 +245,7 @@ router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
+    const { include } = req.query;
 
     const quiz = await getQuizById(id, userId);
 
@@ -144,9 +256,79 @@ router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
       } as QuizError);
     }
 
+    // If include=questions,answers, return complete quiz data
+    if (include === 'questions,answers') {
+      const completeQuiz = await getCompleteQuizForEdit(id, userId);
+      if (!completeQuiz) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Quiz not found',
+        } as QuizError);
+      }
+      return res.json(completeQuiz);
+    }
+
     res.json(quiz);
   } catch (error) {
     logger.error({ error, quizId: req.params.id }, 'Exception in GET /quiz/:id');
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
+// PUT /quiz/:id/start-edit - Set quiz to draft status when editing starts
+router.put('/:id/start-edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    // Verify quiz exists and user owns it
+    const existingQuiz = await getQuizById(id, userId);
+    if (!existingQuiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found',
+      } as QuizError);
+    }
+
+    if (existingQuiz.user_id !== userId) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'You can only edit your own quizzes',
+      } as QuizError);
+    }
+
+    // Set quiz status to draft
+    const { data, error } = await supabaseAdmin
+      .from('quiz_sets')
+      .update({
+        status: 'draft',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error({ error, quizId: id, userId }, 'Error setting quiz to draft');
+      return res.status(500).json({
+        error: 'update_failed',
+        message: 'Failed to set quiz to draft',
+      } as QuizError);
+    }
+
+    logger.info({ quizId: id, userId }, 'Quiz set to draft for editing');
+
+    res.json({
+      id: data.id,
+      status: data.status,
+      updated_at: data.updated_at,
+    });
+  } catch (error) {
+    logger.error({ error, quizId: req.params.id }, 'Exception in PUT /quiz/:id/start-edit');
     res.status(500).json({
       error: 'internal_error',
       message: 'Internal server error',
@@ -318,7 +500,7 @@ router.get(
         is_public,
         sort_by = 'created_at',
         sort_order = 'desc',
-      } = req.query as QuizQueryParams;
+      } = req.validatedQuery as QuizQueryParams;
 
       // Build query step by step
       let query = supabaseAdmin.from('quiz_sets').select('*', { count: 'exact' });
@@ -344,7 +526,7 @@ router.get(
       const { data, error, count } = await query.range(offset, offset + Number(limit) - 1);
 
       if (error) {
-        logger.error({ error, userId, query: req.query }, 'Error fetching quizzes');
+        logger.error({ error, userId, query: req.validatedQuery }, 'Error fetching quizzes');
         return res.status(500).json({
           error: 'fetch_failed',
           message: 'Failed to fetch quizzes',
@@ -375,5 +557,68 @@ router.get(
     }
   },
 );
+
+// GET /quiz/:id - Get single quiz by ID
+router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const quizId = req.params.id;
+
+    // Get the quiz data
+    const quiz = await getQuizById(quizId, userId);
+
+    if (!quiz) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Quiz not found',
+      } as QuizError);
+    }
+
+    // Check if user owns the quiz or if it's public
+    if (quiz.user_id !== userId && !quiz.is_public) {
+      return res.status(403).json({
+        error: 'forbidden',
+        message: 'Access denied',
+      } as QuizError);
+    }
+
+    // Get questions for this quiz
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('questions')
+      .select(
+        `
+          *,
+          answers (*)
+        `,
+      )
+      .eq('question_set_id', quizId)
+      .order('order_index');
+
+    if (questionsError) {
+      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions');
+      return res.status(500).json({
+        error: 'fetch_failed',
+        message: 'Failed to fetch questions',
+      } as QuizError);
+    }
+
+    // Format the response to match QuizSetComplete structure
+    const response = {
+      ...quiz,
+      questions: questions || [],
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      'Exception in GET /quiz/:id',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
 
 export default router;

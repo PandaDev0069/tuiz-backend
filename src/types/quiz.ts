@@ -151,10 +151,7 @@ export interface CreateAnswerRequest {
 }
 
 // Update Question Request
-export interface UpdateQuestionRequest extends Partial<CreateQuestionRequest> {
-  id: string;
-  question_set_id: string;
-}
+export type UpdateQuestionRequest = Partial<CreateQuestionRequest>;
 
 // Quiz Set Response (for API responses)
 export interface QuizSetResponse {
@@ -261,7 +258,7 @@ export const UpdateQuizSetSchema = z.object({
 // Create Answer Schema
 export const CreateAnswerSchema = z.object({
   answer_text: z.string().min(1).max(200),
-  image_url: z.string().url().optional(),
+  image_url: z.string().url().nullable().optional(),
   is_correct: z.boolean(),
   order_index: z.number().int().min(0),
 });
@@ -270,34 +267,32 @@ export const CreateAnswerSchema = z.object({
 export const CreateQuestionSchema = z.object({
   question_text: z.string().min(1).max(500),
   question_type: QuestionTypeSchema,
-  image_url: z.string().url().optional(),
+  image_url: z.string().url().nullable().optional(),
   show_question_time: z.number().int().min(1).max(60),
   answering_time: z.number().int().min(1).max(300),
   points: z.number().int().min(1).max(100),
   difficulty: DifficultyLevelSchema,
   order_index: z.number().int().min(0),
-  explanation_title: z.string().min(1).max(100).optional(),
-  explanation_text: z.string().min(1).max(1000).optional(),
-  explanation_image_url: z.string().url().optional(),
+  explanation_title: z.string().min(1).max(100).nullable().optional(),
+  explanation_text: z.string().min(1).max(1000).nullable().optional(),
+  explanation_image_url: z.string().url().nullable().optional(),
   show_explanation_time: z.number().int().min(1).max(60),
   answers: z.array(CreateAnswerSchema).min(2).max(4),
 });
 
 // Update Question Schema
 export const UpdateQuestionSchema = z.object({
-  id: z.string().uuid(),
-  question_set_id: z.string().uuid(),
   question_text: z.string().min(1).max(500).optional(),
   question_type: QuestionTypeSchema.optional(),
-  image_url: z.string().url().optional(),
+  image_url: z.string().url().nullable().optional(),
   show_question_time: z.number().int().min(1).max(60).optional(),
   answering_time: z.number().int().min(1).max(300).optional(),
   points: z.number().int().min(1).max(100).optional(),
   difficulty: DifficultyLevelSchema.optional(),
   order_index: z.number().int().min(0).optional(),
-  explanation_title: z.string().min(1).max(100).optional(),
-  explanation_text: z.string().min(1).max(1000).optional(),
-  explanation_image_url: z.string().url().optional(),
+  explanation_title: z.string().min(1).max(100).nullable().optional(),
+  explanation_text: z.string().min(1).max(1000).nullable().optional(),
+  explanation_image_url: z.string().url().nullable().optional(),
   show_explanation_time: z.number().int().min(1).max(60).optional(),
   answers: z.array(CreateAnswerSchema).min(2).max(4).optional(),
 });
@@ -305,7 +300,7 @@ export const UpdateQuestionSchema = z.object({
 // Update Answer Schema
 export const UpdateAnswerSchema = z.object({
   answer_text: z.string().min(1).max(200),
-  image_url: z.string().url().optional(),
+  image_url: z.string().url().nullable().optional(),
   is_correct: z.boolean(),
   order_index: z.number().int().min(0),
 });
