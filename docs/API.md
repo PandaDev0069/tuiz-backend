@@ -100,13 +100,120 @@ Invalidates the current session.
 - **401 Unauthorized:** Invalid or expired token
 - **500 Server Error:** Logout failed
 
+### Profile Management Routes
+
+#### GET `/profile`
+
+Retrieves the current user's profile information.
+
+- **Auth:** Bearer token required
+- **Request Body:** none
+- **200 OK:**
+  ```json
+  {
+    "id": "uuid-string",
+    "username": "uniqueUsername",
+    "displayName": "John Doe",
+    "avatarUrl": "https://example.com/avatar.jpg",
+    "email": "user@example.com",
+    "createdAt": "2024-01-15T10:30:45.123Z",
+    "updatedAt": "2024-01-15T10:30:45.123Z"
+  }
+  ```
+- **401 Unauthorized:** Invalid or expired token
+- **500 Server Error:** Profile retrieval failed
+
+#### PUT `/profile/username`
+
+Updates the user's username.
+
+- **Auth:** Bearer token required
+- **Request Body:**
+  ```json
+  {
+    "username": "newUniqueUsername"
+  }
+  ```
+- **200 OK:**
+  ```json
+  {
+    "username": "newUniqueUsername",
+    "message": "Username updated successfully"
+  }
+  ```
+- **400 Bad Request:** Invalid username format or validation failed
+- **409 Conflict:** Username already exists
+- **401 Unauthorized:** Invalid or expired token
+- **500 Server Error:** Username update failed
+
+#### PUT `/profile/display-name`
+
+Updates the user's display name.
+
+- **Auth:** Bearer token required
+- **Request Body:**
+  ```json
+  {
+    "displayName": "New Display Name"
+  }
+  ```
+- **200 OK:**
+  ```json
+  {
+    "displayName": "New Display Name",
+    "message": "Display name updated successfully"
+  }
+  ```
+- **400 Bad Request:** Invalid display name format
+- **401 Unauthorized:** Invalid or expired token
+- **500 Server Error:** Display name update failed
+
+#### POST `/profile/avatar`
+
+Uploads a new avatar image for the user.
+
+- **Auth:** Bearer token required
+- **Content-Type:** `multipart/form-data`
+- **Request Body:**
+  - `avatar`: Image file (JPEG, PNG, WebP, GIF)
+  - Max size: 5MB
+- **200 OK:**
+  ```json
+  {
+    "url": "https://example.com/storage/avatars/user-id/filename.jpg",
+    "path": "user-id/filename.jpg"
+  }
+  ```
+- **400 Bad Request:** No file provided or invalid file format
+- **413 Payload Too Large:** File size exceeds 5MB limit
+- **401 Unauthorized:** Invalid or expired token
+- **500 Server Error:** Avatar upload failed
+
+#### DELETE `/profile/avatar`
+
+Removes the user's current avatar.
+
+- **Auth:** Bearer token required
+- **Request Body:** none
+- **200 OK:**
+  ```json
+  {
+    "message": "Avatar deleted successfully"
+  }
+  ```
+- **404 Not Found:** No avatar to delete
+- **401 Unauthorized:** Invalid or expired token
+- **500 Server Error:** Avatar deletion failed
+
 ## Database Integration
 
 ### Profile System
 
 - Profiles are automatically created via database trigger on user registration
-- Contains `username`, `display_name`, `created_at`, `last_active`
+- Contains `username`, `display_name`, `avatar_url`, `created_at`, `last_active`
 - Protected by Row Level Security (RLS) policies
+- Avatar images stored in Supabase Storage (`avatars` bucket)
+- Automatic cleanup of old avatars when uploading new ones
 
 ### RPC Functions
 
@@ -467,6 +574,16 @@ Validates quiz code format.
 | GET    | `/quiz/code/check/:code`  | Check code availability | None  |
 | GET    | `/quiz/:id/code`          | Get current quiz code   | Owner |
 | DELETE | `/quiz/:id/code`          | Remove quiz code        | Owner |
+
+### Profile Management
+
+| Method | Endpoint                | Description         | Auth     |
+| ------ | ----------------------- | ------------------- | -------- |
+| GET    | `/profile`              | Get profile         | Required |
+| PUT    | `/profile/username`     | Update username     | Required |
+| PUT    | `/profile/display-name` | Update display name | Required |
+| POST   | `/profile/avatar`       | Upload avatar       | Required |
+| DELETE | `/profile/avatar`       | Delete avatar       | Required |
 
 ### Authentication
 
