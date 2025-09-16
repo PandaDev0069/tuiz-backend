@@ -11,6 +11,7 @@ import profileRoutes from './routes/profile';
 import publishingRoutes from './routes/publishing';
 import questionRoutes from './routes/questions';
 import quizRoutes from './routes/quiz';
+import quizLibraryRoutes from './routes/quiz-library';
 import uploadRoutes from './routes/upload';
 import { AuthenticatedRequest } from './types/auth';
 
@@ -41,6 +42,7 @@ export function createApp() {
   app.use('/quiz', answerRoutes);
   app.use('/quiz', publishingRoutes);
   app.use('/quiz', codeRoutes);
+  app.use('/quiz-library', quizLibraryRoutes);
 
   // Example protected route - add your protected routes here
   app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
