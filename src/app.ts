@@ -7,6 +7,7 @@ import answerRoutes from './routes/answers';
 import authRoutes from './routes/auth';
 import codeRoutes from './routes/codes';
 import health from './routes/health';
+import profileRoutes from './routes/profile';
 import publishingRoutes from './routes/publishing';
 import questionRoutes from './routes/questions';
 import quizRoutes from './routes/quiz';
@@ -33,6 +34,7 @@ export function createApp() {
   // routes
   app.use('/auth', authRoutes);
   app.use('/health', health);
+  app.use('/profile', profileRoutes);
   app.use('/upload', uploadRoutes);
   app.use('/quiz', quizRoutes);
   app.use('/quiz', questionRoutes);
