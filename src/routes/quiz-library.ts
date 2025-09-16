@@ -514,6 +514,125 @@ router.get('/preview/:id', async (req, res) => {
 });
 
 // ============================================================================
+// CATEGORIES ROUTES
+// ============================================================================
+
+// GET /api/quiz-library/categories - Get available categories
+router.get('/categories', async (req, res) => {
+  try {
+    logger.info('Categories request received');
+
+    // Get unique categories from published public quizzes
+    const { data: categories, error } = await supabaseAdmin
+      .from('quiz_sets')
+      .select('category')
+      .eq('is_public', true)
+      .eq('status', 'published')
+      .not('category', 'is', null)
+      .not('category', 'eq', '')
+      .order('category');
+
+    if (error) {
+      logger.error({ error }, 'Error fetching categories');
+      return res.status(500).json({
+        error: 'fetch_failed',
+        message: 'Failed to fetch categories',
+      } as LibraryError);
+    }
+
+    // Extract unique categories and count occurrences
+    const categoryMap = new Map<string, number>();
+    categories?.forEach((item) => {
+      const category = item.category;
+      if (category) {
+        categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+      }
+    });
+
+    // Convert to array with counts
+    const categoriesWithCounts = Array.from(categoryMap.entries()).map(([category, count]) => ({
+      category,
+      count,
+    }));
+
+    logger.info(
+      {
+        categoryCount: categoriesWithCounts.length,
+        totalQuizzes: categories?.length || 0,
+      },
+      'Categories fetched successfully',
+    );
+
+    res.json({
+      categories: categoriesWithCounts,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Exception in GET /quiz-library/categories');
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as LibraryError);
+  }
+});
+
+// ============================================================================
+// STATUS COUNTS ROUTES
+// ============================================================================
+
+// GET /api/quiz-library/status-counts - Get quiz status counts for user's library
+router.get('/status-counts', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    logger.info({ userId }, 'Status counts request received');
+
+    // Get counts for each status
+    const [allResult, draftResult, publishedResult] = await Promise.all([
+      supabaseAdmin.from('quiz_sets').select('id', { count: 'exact' }).eq('user_id', userId),
+      supabaseAdmin
+        .from('quiz_sets')
+        .select('id', { count: 'exact' })
+        .eq('user_id', userId)
+        .eq('status', 'draft'),
+      supabaseAdmin
+        .from('quiz_sets')
+        .select('id', { count: 'exact' })
+        .eq('user_id', userId)
+        .eq('status', 'published'),
+    ]);
+
+    if (allResult.error) {
+      logger.error({ error: allResult.error, userId }, 'Error fetching status counts');
+      return res.status(500).json({
+        error: 'fetch_failed',
+        message: 'Failed to fetch status counts',
+      } as LibraryError);
+    }
+
+    const response = {
+      all: allResult.count || 0,
+      published: publishedResult.count || 0,
+      draft: draftResult.count || 0,
+    };
+
+    logger.info(
+      {
+        userId,
+        counts: response,
+      },
+      'Status counts fetched successfully',
+    );
+
+    res.json(response);
+  } catch (error) {
+    logger.error({ error, userId: req.user?.id }, 'Exception in GET /quiz-library/status-counts');
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as LibraryError);
+  }
+});
+
+// ============================================================================
 // QUIZ CLONING ROUTES
 // ============================================================================
 
