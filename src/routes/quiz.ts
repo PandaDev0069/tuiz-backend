@@ -29,78 +29,123 @@ const router = express.Router();
 async function cleanupQuizImages(quizId: string): Promise<void> {
   try {
     logger.info({ quizId }, 'Starting image cleanup for quiz');
-    const imagePaths: string[] = [];
 
-    // Get quiz thumbnail
-    const { data: quizData } = await supabaseAdmin
-      .from('quiz_sets')
-      .select('thumbnail_url')
-      .eq('id', quizId)
-      .single();
-
-    if (quizData?.thumbnail_url) {
-      const thumbnailPath = extractStoragePathFromUrl(quizData.thumbnail_url);
-      if (thumbnailPath) imagePaths.push(thumbnailPath);
-    }
-
-    // Get all question images
-    const { data: questionsData } = await supabaseAdmin
-      .from('questions')
-      .select('id, image_url, explanation_image_url')
-      .eq('question_set_id', quizId);
-
-    if (questionsData) {
-      for (const question of questionsData) {
-        if (question.image_url) {
-          const imagePath = extractStoragePathFromUrl(question.image_url);
-          if (imagePath) imagePaths.push(imagePath);
-        }
-        if (question.explanation_image_url) {
-          const explanationPath = extractStoragePathFromUrl(question.explanation_image_url);
-          if (explanationPath) imagePaths.push(explanationPath);
-        }
-      }
-    }
-
-    // Get all answer images
-    if (questionsData && questionsData.length > 0) {
-      const questionIds = questionsData.map((q) => q.id);
-      const { data: answersData } = await supabaseAdmin
-        .from('answers')
-        .select('image_url')
-        .in('question_id', questionIds);
-
-      if (answersData) {
-        for (const answer of answersData) {
-          if (answer.image_url) {
-            const answerPath = extractStoragePathFromUrl(answer.image_url);
-            if (answerPath) imagePaths.push(answerPath);
-          }
-        }
-      }
-    }
-
-    // Delete all collected images from storage
-    if (imagePaths.length > 0) {
-      const { error: deleteError } = await supabaseAdmin.storage
-        .from('quiz-images')
-        .remove(imagePaths);
-
-      if (deleteError) {
-        logger.error(
-          { error: deleteError, quizId, imagePaths },
-          'Error deleting quiz images from storage',
-        );
-      } else {
-        logger.info(
-          { quizId, deletedCount: imagePaths.length },
-          'Successfully deleted quiz images',
-        );
-      }
-    }
+    const imagePaths = await collectAllQuizImagePaths(quizId);
+    await deleteImagesFromStorage(quizId, imagePaths);
   } catch (error) {
     logger.error({ error, quizId }, 'Exception during quiz image cleanup');
     // Don't throw - we want the quiz deletion to proceed even if image cleanup fails
+  }
+}
+
+/**
+ * Collect all image paths associated with a quiz
+ */
+async function collectAllQuizImagePaths(quizId: string): Promise<string[]> {
+  const imagePaths: string[] = [];
+
+  // Collect quiz thumbnail
+  const thumbnailPath = await getQuizThumbnailPath(quizId);
+  if (thumbnailPath) imagePaths.push(thumbnailPath);
+
+  // Collect question images
+  const questionImagePaths = await getQuestionImagePaths(quizId);
+  imagePaths.push(...questionImagePaths);
+
+  // Collect answer images
+  const answerImagePaths = await getAnswerImagePaths(quizId);
+  imagePaths.push(...answerImagePaths);
+
+  return imagePaths;
+}
+
+/**
+ * Get quiz thumbnail path
+ */
+async function getQuizThumbnailPath(quizId: string): Promise<string | null> {
+  const { data: quizData } = await supabaseAdmin
+    .from('quiz_sets')
+    .select('thumbnail_url')
+    .eq('id', quizId)
+    .single();
+
+  if (!quizData?.thumbnail_url) return null;
+
+  return extractStoragePathFromUrl(quizData.thumbnail_url);
+}
+
+/**
+ * Get all question image paths for a quiz
+ */
+async function getQuestionImagePaths(quizId: string): Promise<string[]> {
+  const { data: questionsData } = await supabaseAdmin
+    .from('questions')
+    .select('id, image_url, explanation_image_url')
+    .eq('question_set_id', quizId);
+
+  if (!questionsData) return [];
+
+  const imagePaths: string[] = [];
+  for (const question of questionsData) {
+    if (question.image_url) {
+      const imagePath = extractStoragePathFromUrl(question.image_url);
+      if (imagePath) imagePaths.push(imagePath);
+    }
+    if (question.explanation_image_url) {
+      const explanationPath = extractStoragePathFromUrl(question.explanation_image_url);
+      if (explanationPath) imagePaths.push(explanationPath);
+    }
+  }
+
+  return imagePaths;
+}
+
+/**
+ * Get all answer image paths for a quiz
+ */
+async function getAnswerImagePaths(quizId: string): Promise<string[]> {
+  // First get question IDs for this quiz
+  const { data: questionsData } = await supabaseAdmin
+    .from('questions')
+    .select('id')
+    .eq('question_set_id', quizId);
+
+  if (!questionsData || questionsData.length === 0) return [];
+
+  const questionIds = questionsData.map((q) => q.id);
+  const { data: answersData } = await supabaseAdmin
+    .from('answers')
+    .select('image_url')
+    .in('question_id', questionIds);
+
+  if (!answersData) return [];
+
+  const imagePaths: string[] = [];
+  for (const answer of answersData) {
+    if (answer.image_url) {
+      const answerPath = extractStoragePathFromUrl(answer.image_url);
+      if (answerPath) imagePaths.push(answerPath);
+    }
+  }
+
+  return imagePaths;
+}
+
+/**
+ * Delete images from storage
+ */
+async function deleteImagesFromStorage(quizId: string, imagePaths: string[]): Promise<void> {
+  if (imagePaths.length === 0) return;
+
+  const { error: deleteError } = await supabaseAdmin.storage.from('quiz-images').remove(imagePaths);
+
+  if (deleteError) {
+    logger.error(
+      { error: deleteError, quizId, imagePaths },
+      'Error deleting quiz images from storage',
+    );
+  } else {
+    logger.info({ quizId, deletedCount: imagePaths.length }, 'Successfully deleted quiz images');
   }
 }
 
