@@ -1,6 +1,7 @@
 // src/utils/quizValidation.ts
 import { Request, Response, NextFunction } from 'express';
 import { ZodType, ZodError } from 'zod';
+import { AuthenticatedRequest } from '../types/auth';
 import { QuizError } from '../types/quiz';
 import { logger } from './logger';
 
@@ -57,11 +58,21 @@ export function validateQueryParams<T>(schema: ZodType<T>) {
         } as QuizError);
       }
 
-      // Replace req.query with validated data
-      req.query = result.data as Record<string, string | string[] | undefined>;
+      // Store validated data in a custom property
+      (req as AuthenticatedRequest).validatedQuery = result.data as Record<
+        string,
+        string | string[] | undefined
+      >;
       next();
     } catch (error) {
-      logger.error({ error }, 'Query validation middleware error');
+      logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          query: req.query,
+        },
+        'Query validation middleware error',
+      );
       res.status(500).json({
         error: 'internal_error',
         message: 'Internal server error',

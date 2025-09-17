@@ -8,6 +8,7 @@ export interface AuthenticatedRequest extends Request {
     username?: string;
     displayName?: string;
   };
+  validatedQuery?: Record<string, string | string[] | undefined>;
 }
 
 export interface RegisterRequest {

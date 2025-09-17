@@ -12,6 +12,11 @@ import {
   UpdateQuestionInput,
   QuestionType,
   DifficultyLevel,
+  QuestionWithAnswers,
+  CreateQuestionRequest,
+  CreateAnswerRequest,
+  Question,
+  Answer,
 } from '../types/quiz';
 import { logger } from '../utils/logger';
 import { validateRequest } from '../utils/quizValidation';
@@ -304,7 +309,7 @@ async function updateQuestionAnswers(
   questionId: string,
   answers: Array<{
     answer_text: string;
-    image_url?: string;
+    image_url?: string | null;
     is_correct: boolean;
     order_index: number;
   }>,
@@ -578,5 +583,266 @@ router.put('/:quizId/questions/reorder', authMiddleware, async (req: Authenticat
     } as QuizError);
   }
 });
+
+// ============================================================================
+// BATCH QUESTION OPERATIONS
+// ============================================================================
+
+// POST /quiz/:quizId/questions/batch - Batch save questions for editing
+router.post('/:quizId/questions/batch', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.user!.id;
+    const { questions } = req.body;
+
+    // Validate request
+    const validationError = await validateBatchQuestionsRequest(quizId, userId, questions);
+    if (validationError) {
+      return res.status(validationError.status).json(validationError.response);
+    }
+
+    // Delete existing questions
+    const deleteError = await deleteExistingQuestions(quizId, userId);
+    if (deleteError) {
+      return res.status(deleteError.status).json(deleteError.response);
+    }
+
+    // Create new questions and answers
+    const savedQuestions = await createQuestionsWithAnswers(
+      quizId,
+      questions as CreateQuestionRequest[],
+      userId,
+    );
+    if ('error' in savedQuestions) {
+      return res.status(savedQuestions.error.status).json(savedQuestions.error.response);
+    }
+
+    // Update quiz question count
+    await updateQuizQuestionCount(quizId);
+
+    logger.info(
+      { quizId, userId, questionCount: savedQuestions.data.length },
+      'Questions batch saved successfully',
+    );
+
+    res.json(savedQuestions.data);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.quizId },
+      'Exception in POST /quiz/:quizId/questions/batch',
+    );
+    res.status(500).json({
+      error: 'internal_error',
+      message: 'Internal server error',
+    } as QuizError);
+  }
+});
+
+/**
+ * Validate batch questions request
+ */
+async function validateBatchQuestionsRequest(
+  quizId: string,
+  userId: string,
+  questions: unknown,
+): Promise<{ status: number; response: QuizError } | null> {
+  // Verify quiz exists and user owns it
+  const quiz = await getQuizById(quizId, userId);
+  if (!quiz) {
+    return {
+      status: 404,
+      response: {
+        error: 'not_found',
+        message: 'Quiz not found or you do not have permission to modify it',
+      } as QuizError,
+    };
+  }
+
+  if (!Array.isArray(questions)) {
+    return {
+      status: 400,
+      response: {
+        error: 'invalid_request',
+        message: 'Questions must be an array',
+      } as QuizError,
+    };
+  }
+
+  // Type guard to ensure questions is an array of CreateQuestionRequest
+  if (
+    !questions.every(
+      (q) => typeof q === 'object' && q !== null && 'question_text' in q && 'question_type' in q,
+    )
+  ) {
+    return {
+      status: 400,
+      response: {
+        error: 'invalid_request',
+        message: 'Invalid question data format',
+      } as QuizError,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Delete existing questions for a quiz
+ */
+async function deleteExistingQuestions(
+  quizId: string,
+  userId: string,
+): Promise<{ status: number; response: QuizError } | null> {
+  const { error: deleteError } = await supabaseAdmin
+    .from('questions')
+    .delete()
+    .eq('question_set_id', quizId);
+
+  if (deleteError) {
+    logger.error({ error: deleteError, quizId, userId }, 'Error deleting existing questions');
+    return {
+      status: 500,
+      response: {
+        error: 'delete_failed',
+        message: 'Failed to delete existing questions',
+      } as QuizError,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Create questions with their answers
+ */
+async function createQuestionsWithAnswers(
+  quizId: string,
+  questions: CreateQuestionRequest[],
+  userId: string,
+): Promise<{ data: QuestionWithAnswers[] } | { error: { status: number; response: QuizError } }> {
+  const savedQuestions: QuestionWithAnswers[] = [];
+
+  for (const questionData of questions) {
+    // Validate question data
+    if (!questionData.question_text || !questionData.question_type) {
+      return {
+        error: {
+          status: 400,
+          response: {
+            error: 'validation_error',
+            message: 'Question text and type are required',
+          } as QuizError,
+        },
+      };
+    }
+
+    // Create question
+    const questionResult = await createQuestion(quizId, questionData, userId);
+    if ('error' in questionResult) {
+      return { error: questionResult.error };
+    }
+
+    // Create answers for this question
+    const answersResult = await createAnswersForQuestion(
+      questionResult.data.id,
+      questionData.answers || [],
+    );
+    if ('error' in answersResult) {
+      return { error: answersResult.error };
+    }
+
+    savedQuestions.push({
+      ...questionResult.data,
+      answers: answersResult.data,
+    });
+  }
+
+  return { data: savedQuestions };
+}
+
+/**
+ * Create a single question
+ */
+async function createQuestion(
+  quizId: string,
+  questionData: CreateQuestionRequest,
+  userId: string,
+): Promise<{ data: Question } | { error: { status: number; response: QuizError } }> {
+  const { data: question, error: questionError } = await supabaseAdmin
+    .from('questions')
+    .insert({
+      question_set_id: quizId,
+      question_text: questionData.question_text,
+      question_type: questionData.question_type,
+      image_url: questionData.image_url || null,
+      show_question_time: questionData.show_question_time,
+      answering_time: questionData.answering_time,
+      points: questionData.points,
+      difficulty: questionData.difficulty,
+      order_index: questionData.order_index,
+      explanation_title: questionData.explanation_title || null,
+      explanation_text: questionData.explanation_text || null,
+      explanation_image_url: questionData.explanation_image_url || null,
+      show_explanation_time: questionData.show_explanation_time,
+    })
+    .select()
+    .single();
+
+  if (questionError) {
+    logger.error({ error: questionError, quizId, userId }, 'Error creating question');
+    return {
+      error: {
+        status: 500,
+        response: {
+          error: 'create_failed',
+          message: 'Failed to create question',
+        } as QuizError,
+      },
+    };
+  }
+
+  return { data: question };
+}
+
+/**
+ * Create answers for a question
+ */
+async function createAnswersForQuestion(
+  questionId: string,
+  answersData: CreateAnswerRequest[],
+): Promise<{ data: Answer[] } | { error: { status: number; response: QuizError } }> {
+  const answers = [];
+
+  for (const answerData of answersData) {
+    const { data: answer, error: answerError } = await supabaseAdmin
+      .from('answers')
+      .insert({
+        question_id: questionId,
+        answer_text: answerData.answer_text,
+        image_url: answerData.image_url ?? null,
+        is_correct: answerData.is_correct,
+        order_index: answerData.order_index,
+      })
+      .select()
+      .single();
+
+    if (answerError) {
+      logger.error({ error: answerError, questionId }, 'Error creating answer');
+      return {
+        error: {
+          status: 500,
+          response: {
+            error: 'create_failed',
+            message: 'Failed to create answer',
+          } as QuizError,
+        },
+      };
+    }
+
+    answers.push(answer);
+  }
+
+  return { data: answers };
+}
 
 export default router;
