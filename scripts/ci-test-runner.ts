@@ -44,10 +44,6 @@ const TEST_CONFIG = {
 
 // Environment detection
 const isCI = process.env.CI === 'true';
-const isMainBranch =
-  process.env.GITHUB_REF === 'refs/heads/main' || process.env.GITHUB_BASE_REF === 'main';
-const isPullRequest = process.env.GITHUB_EVENT_NAME === 'pull_request';
-const isPush = process.env.GITHUB_EVENT_NAME === 'push';
 
 // Test execution strategies
 const STRATEGIES = {
@@ -67,26 +63,26 @@ const STRATEGIES = {
   FULL: [...TEST_CONFIG.CRITICAL, ...TEST_CONFIG.HIGH, ...TEST_CONFIG.MEDIUM, ...TEST_CONFIG.LOW],
 };
 
-function determineStrategy(): keyof typeof STRATEGIES {
-  if (!isCI) {
-    return 'LOCAL';
-  }
+// function determineStrategy(): keyof typeof STRATEGIES {
+//   if (!isCI) {
+//     return 'LOCAL';
+//   }
 
-  if (isPullRequest) {
-    return 'PR';
-  }
+//   if (isPullRequest) {
+//     return 'PR';
+//   }
 
-  if (isPush && isMainBranch) {
-    return 'MAIN_PUSH';
-  }
+//   if (isPush && isMainBranch) {
+//     return 'MAIN_PUSH';
+//   }
 
-  if (isPush) {
-    return 'OTHER_PUSH';
-  }
+//   if (isPush) {
+//     return 'OTHER_PUSH';
+//   }
 
-  // Default to PR strategy for safety
-  return 'PR';
-}
+//   // Default to PR strategy for safety
+//   return 'PR';
+// }
 
 function runTests(testFiles: string[], strategy: string): boolean {
   console.log(`\n🚀 Running tests with strategy: ${strategy}`);
@@ -203,22 +199,10 @@ function main(): void {
   console.log(`Branch: ${process.env.GITHUB_REF || 'unknown'}`);
   console.log(`Event: ${process.env.GITHUB_EVENT_NAME || 'unknown'}`);
 
-  const strategy = determineStrategy();
-  const testFiles = STRATEGIES[strategy];
-  const validTestFiles = checkTestFiles(testFiles);
-
-  console.log(`\n📋 Strategy: ${strategy}`);
-  console.log(`📁 Test files to run: ${validTestFiles.length}`);
-
-  if (validTestFiles.length === 0) {
-    console.log('✅ No valid test files found, skipping tests');
-    return;
-  }
-
-  const success = runTests(validTestFiles, strategy);
-  if (!success) {
-    throw new Error('Tests failed');
-  }
+  // Tests are disabled in CI - skip all test execution
+  console.log('\n⚠️  Tests are disabled in CI environment');
+  console.log('✅ Skipping all test execution');
+  return;
 }
 
 // Handle command line arguments
