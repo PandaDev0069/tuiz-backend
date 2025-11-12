@@ -2,7 +2,7 @@
 
 Opinionated, practical rules to keep the API maintainable and secure.
 
-## 1) Project Structure
+## 1 Project Structure
 
 ```
 src/
@@ -67,6 +67,11 @@ src/
 - **Rate limit** `/auth/*` and host-control routes.
 - **Validate** every external input; sanitize outputs.
 - **JWT verification** (Supabase JWKS) when auth is introduced.
+- **Database Functions**: Always set `SET search_path = ''` in function
+  definitions to prevent privilege escalation attacks. See migration
+  `20251112030153_fix_function_search_path_security.sql` for examples.
+- **SQL Functions**: Use fully qualified table names (`public.table_name`)
+  when search_path is empty.
 
 ## 8) Async & Reliability
 
