@@ -3,14 +3,9 @@
 -- Created: 2025-08-20
 
 -- Step 1: Create avatars storage bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'avatars',
-    'avatars',
-    true, -- Public read access
-    5242880, -- 5MB limit
-    ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-);
+INSERT INTO storage.buckets (id, name)
+VALUES ('avatars', 'avatars')
+ON CONFLICT (id) DO NOTHING;
 
 -- Step 2: Create storage policies
 

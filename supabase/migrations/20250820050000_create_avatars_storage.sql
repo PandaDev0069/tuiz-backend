@@ -6,20 +6,8 @@
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'avatars') THEN
-        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-        VALUES (
-            'avatars',
-            'avatars',
-            true, -- Public read access
-            5242880, -- 5MB file size limit
-            ARRAY[
-                'image/jpeg',
-                'image/jpg', 
-                'image/png',
-                'image/webp',
-                'image/gif'
-            ]
-        );
+        INSERT INTO storage.buckets (id, name)
+        VALUES ('avatars', 'avatars');
     END IF;
 END $$;
 
