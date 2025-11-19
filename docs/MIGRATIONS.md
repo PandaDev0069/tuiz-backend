@@ -37,6 +37,47 @@ supabase migration list
 
 ## Recent Migrations
 
+### 20251119025130_fix_current_setting_rls_warnings.sql
+
+**Purpose**: Fix remaining `current_setting()` performance warnings in RLS policies
+
+**Changes**:
+
+- Wrapped all `current_setting('request.headers')` calls with `(SELECT current_setting('request.headers', true))` to prevent per-row re-evaluation
+- Added `true` parameter to make setting retrieval non-failing if header is missing
+- Affected policies:
+  - `games`: "Users can update their own games"
+  - `players`: "Players can update their own data"
+  - `game_flows`: "Game hosts can insert/update/delete game flows" (3 policies)
+  - `game_player_data`: "Players can insert/update their own data" (2 policies)
+
+**Performance Impact**:
+
+- Completes the RLS optimization by caching all function calls (auth + current_setting)
+- Resolves all 7 remaining auth_rls_initplan warnings
+- Prevents per-row re-evaluation of request headers in device-based authentication
+
+**Reference**: [Supabase RLS Performance - Call Functions with SELECT](https://supabase.com/docs/guides/database/postgres/row-level-security#call-functions-with-select)
+
+### 20251119024857_fix_rls_performance_warnings.sql
+
+**Purpose**: Fix RLS performance warnings from Supabase linter
+
+**Changes**:
+
+- Wrapped all `auth.uid()` and `auth.role()` calls with `(SELECT auth.uid())` to prevent per-row re-evaluation
+- Consolidated duplicate SELECT policies on `game_flows` table into a single policy
+- Split `game_flows` "ALL" policy into separate INSERT, UPDATE, DELETE policies for clarity
+- Affected tables: `games`, `players`, `game_flows`, `game_player_data`
+
+**Performance Impact**:
+
+- Reduces query overhead by caching auth function results (prevents re-evaluation for each row)
+- Eliminates redundant policy evaluations on `game_flows` table
+- Resolves 13 linter warnings (8 auth_rls_initplan + 5 multiple_permissive_policies)
+
+**Reference**: [Supabase RLS Performance - Call Functions with SELECT](https://supabase.com/docs/guides/database/postgres/row-level-security#call-functions-with-select)
+
 ### 20251112030153_fix_function_search_path_security.sql
 
 **Purpose**: Fix security warnings for function search_path mutability
