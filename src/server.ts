@@ -3,6 +3,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { createApp } from './app';
 import { env, isProd, getAllowedOrigins } from './config/env';
+import { WebSocketManager, WebSocketEvents, ServerEvents } from './services/websocket';
 import { logger } from './utils/logger';
 
 // CORS helper functions (same logic as cors.ts)
@@ -39,7 +40,7 @@ function originAllowed(origin: string, allowedList: string[]): boolean {
 
 const app = createApp();
 const server = http.createServer(app);
-const io = new SocketIOServer(server, {
+const io = new SocketIOServer<WebSocketEvents, ServerEvents>(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true); // Same-origin requests
@@ -57,15 +58,15 @@ const io = new SocketIOServer(server, {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   },
+  pingInterval: 25000,
+  pingTimeout: 20000,
 });
 
-io.on('connection', (socket) => {
-  logger.info('socket.io connected');
-  socket.emit('server:hello');
-  socket.on('client:hello', () => {
-    logger.info('client greeted');
-  });
-});
+// Initialize WebSocket Manager
+const wsManager = new WebSocketManager(io);
+
+// Export for potential use in routes
+export { wsManager };
 
 server.listen(env.PORT, () => {
   const host = isProd ? '0.0.0.0' : 'localhost';
