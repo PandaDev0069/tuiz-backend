@@ -80,7 +80,7 @@ npm run dev
 
 ### 2. Open Test Page
 
-Navigate to: **http://localhost:3000/websocket-test**
+Navigate to: **`http://localhost:3000/websocket-test**`
 
 ### 3. Test Features
 
@@ -207,7 +207,7 @@ ws.sendGameState('multiplayer-game-1', {
 
 ### Connection Flow
 
-```
+```mermaid
 Frontend                    Backend
    |                           |
    |-- Socket.IO Connect ----->|
@@ -225,7 +225,7 @@ Frontend                    Backend
 
 ### Room Flow
 
-```
+```text
 Frontend                    Backend
    |                           |
    |-- room:join ------------>|
@@ -333,7 +333,7 @@ See `WEBSOCKET_DATABASE_REQUIREMENTS.md` for:
 
 ## File Structure
 
-```
+```text
 tuiz-backend/
 └── src/
     ├── server.ts                          (modified - integrated WebSocketManager)
@@ -413,7 +413,7 @@ These will be addressed when implementing the database layer (see `WEBSOCKET_DAT
 
 For questions or issues:
 
-1. **Check the test page**: http://localhost:3000/websocket-test
+1. **Check the test page**: `http://localhost:3000/websocket-test`
 2. **Review documentation**: `WEBSOCKET_API_README.md`
 3. **Check logs**: Browser console + Backend console
 4. **Database setup**: `WEBSOCKET_DATABASE_REQUIREMENTS.md`
@@ -435,6 +435,6 @@ For questions or issues:
 
 The WebSocket implementation is complete and ready for testing. The API is designed to be easy to use for game development while providing robust reconnection logic and device tracking.
 
-**Test the implementation at:** http://localhost:3000/websocket-test
+**Test the implementation at:** `http://localhost:3000/websocket-test`
 
 **Next step:** Review the test page, verify all features work, then proceed with integrating into your game components.
