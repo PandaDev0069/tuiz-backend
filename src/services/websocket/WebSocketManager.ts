@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger';
 
 import { ConnectionStore } from './ConnectionStore';
 import { ClientConnection, ConnectionInfo, WebSocketEvents, ServerEvents } from './types';
+import { WebSocketPersistence } from './WebSocketPersistence';
 
 type TypedSocket = Socket<WebSocketEvents, ServerEvents>;
 
@@ -73,7 +74,7 @@ export class WebSocketManager {
     });
   }
 
-  private registerClient(socket: TypedSocket, data: ConnectionInfo): void {
+  private async registerClient(socket: TypedSocket, data: ConnectionInfo): Promise<void> {
     const { deviceId, userId, metadata } = data;
 
     if (!deviceId) {
@@ -84,9 +85,13 @@ export class WebSocketManager {
       return;
     }
 
-    // Check if device was previously connected (reconnection)
-    const existingConnection = this.store.getConnectionByDevice(deviceId);
-    const reconnectCount = existingConnection ? existingConnection.reconnectCount + 1 : 0;
+    // Persist connection to DB and get history
+    const { connectionId, reconnectCount } = await WebSocketPersistence.registerConnection(
+      deviceId,
+      socket.id,
+      userId,
+      metadata,
+    );
 
     const connection: ClientConnection = {
       socketId: socket.id,
@@ -96,6 +101,7 @@ export class WebSocketManager {
       lastHeartbeat: new Date(),
       reconnectCount,
       metadata,
+      connectionId,
     };
 
     this.store.addConnection(connection);
@@ -108,12 +114,21 @@ export class WebSocketManager {
     });
 
     logger.info(
-      `Client registered: socket=${socket.id}, device=${deviceId}, reconnects=${reconnectCount}`,
+      `Client registered: socket=${socket.id}, device=${deviceId}, reconnects=${reconnectCount}, dbId=${connectionId}`,
     );
   }
 
   private handleDisconnect(socket: TypedSocket, reason: string): void {
     logger.info(`Socket disconnected: ${socket.id}, reason: ${reason}`);
+
+    const connection = this.store.getConnection(socket.id);
+    if (connection && connection.connectionId) {
+      // Update DB asynchronously
+      WebSocketPersistence.handleDisconnect(connection.connectionId).catch((err) => {
+        logger.error({ err }, 'Failed to update disconnect status');
+      });
+    }
+
     this.store.removeConnection(socket.id);
   }
 

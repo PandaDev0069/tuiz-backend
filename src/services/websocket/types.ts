@@ -8,6 +8,7 @@ export interface ClientConnection {
   lastHeartbeat: Date;
   reconnectCount: number;
   metadata?: Record<string, unknown>;
+  connectionId?: string; // Database ID for the connection
 }
 
 export interface ConnectionInfo {
