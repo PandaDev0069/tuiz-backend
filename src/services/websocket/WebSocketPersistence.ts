@@ -13,9 +13,21 @@ export class WebSocketPersistence {
     metadata: Record<string, unknown> = {},
   ): Promise<{ connectionId?: string; reconnectCount: number }> {
     try {
-      // 1. Get reconnect count
-      // We do this first to return it to the client
-      const { data: reconnectCount, error: countError } = await supabaseAdmin.rpc(
+      // 1. Mark previous active connections as disconnected BEFORE counting reconnections
+      // Ensures count reflects all prior sessions for this device
+      const disconnectionTs = new Date().toISOString();
+      const { error: cleanupError } = await supabaseAdmin
+        .from('websocket_connections')
+        .update({ status: 'disconnected', disconnected_at: disconnectionTs })
+        .eq('device_id', deviceId)
+        .eq('status', 'active');
+
+      if (cleanupError) {
+        logger.warn({ cleanupError, deviceId }, 'Failed to mark previous active connections');
+      }
+
+      // 2. Get reconnect count (number of prior disconnected sessions)
+      const { data: reconnectCountRaw, error: countError } = await supabaseAdmin.rpc(
         'get_device_reconnect_count',
         { p_device_id: deviceId },
       );
@@ -23,26 +35,9 @@ export class WebSocketPersistence {
       if (countError) {
         logger.error({ err: countError }, 'Failed to get reconnect count');
       }
+      const reconnectCount = (reconnectCountRaw as number) || 0;
 
-      // 2. Mark previous active connections for this device as disconnected
-      // This prevents "dangling" active connections and keeps the active count accurate
-      // We don't await this to avoid blocking the new connection
-      supabaseAdmin
-        .from('websocket_connections')
-        .update({
-          status: 'disconnected',
-          disconnected_at: new Date().toISOString(),
-        })
-        .eq('device_id', deviceId)
-        .eq('status', 'active')
-        .then(({ error }) => {
-          if (error) logger.warn({ error, deviceId }, 'Failed to cleanup old connections');
-        });
-
-      // 3. Insert into websocket_connections
-      // NOTE: The database has a trigger 'trigger_auto_update_device_session'
-      // that will automatically update the device_sessions table.
-      // We don't need to call update_device_session explicitly here.
+      // 3. Insert new connection INCLUDING reconnect_count so trigger can increment device_sessions
       const { data: connection, error: connError } = await supabaseAdmin
         .from('websocket_connections')
         .insert({
@@ -50,6 +45,7 @@ export class WebSocketPersistence {
           user_id: userId || null,
           socket_id: socketId,
           status: 'active',
+          reconnect_count: reconnectCount,
           metadata,
         })
         .select('id')
@@ -59,10 +55,29 @@ export class WebSocketPersistence {
         logger.error({ err: connError }, 'Failed to create websocket connection record');
       }
 
-      return {
-        connectionId: connection?.id,
-        reconnectCount: (reconnectCount as number) || 0,
-      };
+      // 4. Reconcile device_sessions.total_reconnections if historical rows existed but trigger never fired previously
+      if (reconnectCount > 0) {
+        // Update total_reconnections to at least reconnectCount
+        const { data: sessionRow } = await supabaseAdmin
+          .from('device_sessions')
+          .select('total_reconnections')
+          .eq('device_id', deviceId)
+          .maybeSingle();
+
+        const currentTotal =
+          (sessionRow as { total_reconnections: number } | null)?.total_reconnections ?? 0;
+        if (currentTotal < reconnectCount) {
+          const { error: reconcileError } = await supabaseAdmin
+            .from('device_sessions')
+            .update({ total_reconnections: reconnectCount })
+            .eq('device_id', deviceId);
+          if (reconcileError) {
+            logger.warn({ reconcileError, deviceId }, 'Failed to reconcile total_reconnections');
+          }
+        }
+      }
+
+      return { connectionId: connection?.id, reconnectCount };
     } catch (err) {
       logger.error({ err }, 'Error in registerConnection');
       return { connectionId: undefined, reconnectCount: 0 };
