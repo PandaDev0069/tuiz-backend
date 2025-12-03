@@ -2,6 +2,7 @@ import express from 'express';
 import { ZodError } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
+import { gameFlowService } from '../services/gameFlowService';
 import { AuthenticatedRequest } from '../types/auth';
 import { CreateGameSchema, GameStatus } from '../types/game';
 import { logger } from '../utils/logger';
@@ -100,19 +101,41 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
       return res.status(500).json({ error: 'database_error', message: 'Failed to create game' });
     }
 
-    // Initialize game flow
-    const { error: flowError } = await supabaseAdmin.from('game_flows').insert({
+    // Initialize game flow using the service
+    const gameFlowResult = await gameFlowService.createGameFlow({
       game_id: game.id,
       quiz_set_id: input.quiz_set_id,
       total_questions: quiz.total_questions,
       current_question_index: 0,
     });
 
-    if (flowError) {
-      logger.error({ error: flowError, gameId: game.id }, 'Error creating game flow');
+    if (!gameFlowResult.success) {
+      // Rollback: Delete the game since game_flows creation failed
+      logger.error(
+        { gameId: game.id, error: gameFlowResult.error },
+        'Game flow creation failed, rolling back game creation',
+      );
+
+      // Attempt to delete the game
+      const { error: deleteError } = await supabaseAdmin.from('games').delete().eq('id', game.id);
+
+      if (deleteError) {
+        logger.error(
+          { error: deleteError, gameId: game.id },
+          'Failed to rollback game creation after game_flows error',
+        );
+      }
+
+      return res.status(500).json({
+        error: 'database_error',
+        message: `Failed to initialize game flow: ${gameFlowResult.error}`,
+      });
     }
 
-    logger.info({ gameId: game.id, userId }, 'Game created successfully');
+    logger.info(
+      { gameId: game.id, gameFlowId: gameFlowResult.gameFlow?.id, userId },
+      'Game and game flow created successfully',
+    );
     res.status(201).json({ game });
   } catch (error) {
     if (error instanceof ZodError) {

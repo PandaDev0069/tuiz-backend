@@ -122,6 +122,21 @@ describe('Game API', () => {
     expect(response.body.game.game_code).toBe('123456');
     expect(response.body.game.status).toBe(GameStatus.WAITING);
     expect(response.body.game.user_id).toBe(userId);
+
+    // Verify game_flows was created
+    const gameId = response.body.game.id;
+    const { data: gameFlow, error: flowError } = await supabaseAdmin
+      .from('game_flows')
+      .select('*')
+      .eq('game_id', gameId)
+      .single();
+
+    expect(flowError).toBeNull();
+    expect(gameFlow).toBeDefined();
+    expect(gameFlow.game_id).toBe(gameId);
+    expect(gameFlow.quiz_set_id).toBe(quizId);
+    expect(gameFlow.total_questions).toBe(5);
+    expect(gameFlow.current_question_index).toBe(0);
   });
 
   it('should create a game with fallback code if quiz code is taken', async () => {

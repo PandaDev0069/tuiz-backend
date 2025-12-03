@@ -289,6 +289,16 @@ export interface GameCodeValidationResponse {
 // Game Status Schema
 export const GameStatusSchema = z.nativeEnum(GameStatus);
 
+// Create Game Flow Schema
+export const CreateGameFlowSchema = z.object({
+  game_id: z.string().uuid('Invalid game ID'),
+  quiz_set_id: z.string().uuid('Invalid quiz set ID'),
+  total_questions: z.number().int().min(0, 'Total questions must be non-negative'),
+  current_question_index: z.number().int().min(0).optional(),
+  current_question_id: z.string().uuid().nullable().optional(),
+  next_question_id: z.string().uuid().nullable().optional(),
+});
+
 // Game Settings Schema
 export const GameSettingsSchema = z
   .object({
