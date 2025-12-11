@@ -122,3 +122,14 @@ New file: AI_ONBOARDING.md
 Commit: 5463280
 
 **Next**: Back to useGameFlow hook
+
+---
+
+### Message #5 - AI Session 2 (17:10 JST)
+
+**Created AI_ONBOARDING.md** - Complete manual for new AI agents
+
+New AIs can now get productive in <5 minutes.
+Commit: 5463280
+
+**Next**: Continuing with useGameFlow hook
