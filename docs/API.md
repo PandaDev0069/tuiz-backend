@@ -7,6 +7,77 @@
 
 - Local: `http://localhost:8080`
 
+## WebSocket API (Socket.io)
+
+The backend uses Socket.io for real-time events. Clients connect to the Socket.io endpoint exposed by the Express server. Event names must match frontend and backend contracts documented in `AI_TECHNICAL.md`.
+
+**Connection**
+
+- Endpoint: `ws[s]://<backend-host>/socket.io/`
+- Auth: Frontend forwards Supabase JWT; backend verifies statelessly.
+
+**Core Events**
+
+- `server:hello`: Emitted by server upon connection to confirm handshake.
+- `client:hello`: Emitted by client after receiving `server:hello` to confirm readiness.
+
+**Game Room Lifecycle**
+
+- `game:host:create` (Client → Server)
+  - Payload: `{ hostId: string, title: string, settings?: GameSettings }`
+  - Response: `game:room:created` `{ roomId: string, code: string }`
+
+- `game:room:join` (Client → Server)
+  - Payload: `{ roomCode: string, playerId: string, displayName: string }`
+  - Response: `game:room:joined` `{ roomId: string, player: PlayerSummary }`
+  - Broadcast: `game:room:participants:update` `{ roomId: string, participants: Participant[] }`
+
+- `game:room:leave` (Client → Server)
+  - Payload: `{ roomId: string, playerId: string }`
+  - Broadcast: `game:room:participants:update`
+
+**Question Flow**
+
+- `game:flow:start` (Host → Server)
+  - Payload: `{ roomId: string, questionId: string, startsAt: number, endsAt: number }`
+  - Broadcast: `game:question:started` `{ roomId, question, endsAt }`
+
+- `game:flow:next` (Host → Server)
+  - Payload: `{ roomId: string, nextQuestionId: string }`
+  - Broadcast: `game:question:changed` `{ roomId, question }`
+
+- `game:flow:end` (Host → Server)
+  - Payload: `{ roomId: string }`
+  - Broadcast: `game:question:ended` `{ roomId }`
+
+**Answer Submission**
+
+- `game:answer:submit` (Player → Server)
+  - Payload: `{ roomId: string, playerId: string, questionId: string, answer: string | number }`
+  - Response: `game:answer:accepted` `{ roomId, playerId, questionId, submittedAt }`
+  - Broadcast: `game:answer:stats:update` `{ roomId, questionId, counts: Record<string, number> }`
+
+**Leaderboard**
+
+- `game:leaderboard:request` (Client → Server)
+  - Payload: `{ roomId: string }`
+  - Response: `game:leaderboard:update` `{ roomId, rankings: RankingEntry[] }`
+
+**Connection Management**
+
+- `connection:heartbeat` (Client → Server)
+  - Payload: `{ socketId: string, roomId?: string }`
+  - Response: `connection:heartbeat:ack` `{ timestamp: number }`
+
+- `connection:reconnect` (Client → Server)
+  - Payload: `{ previousSocketId: string, newSocketId: string, roomId?: string, playerId?: string }`
+  - Broadcast: participant state corrections as needed
+
+**Error Contract**
+
+- All error emissions follow unified structure: `{ error: string, message?: string, requestId?: string }`
+- Example: `{ error: 'invalid_payload', message: 'Invalid request data' }`
+
 ## Routes
 
 ### Health Check
@@ -560,6 +631,7 @@ Get the current game flow state for a specific game.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/game-flows/550e8400-e29b-41d4-a716-446655440000/flow" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -596,6 +668,7 @@ List all game flows with pagination and filtering.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/game-flows/?quiz_set_id=550e8400-e29b-41d4-a716-446655440000&limit=10" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -626,6 +699,7 @@ Advance to the next question in the game flow.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X POST "http://localhost:8080/game-flows/550e8400-e29b-41d4-a716-446655440000/advance" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -663,6 +737,7 @@ Update game flow properties (current question index, timer, etc.).
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X PATCH "http://localhost:8080/game-flows/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
@@ -688,6 +763,7 @@ Delete a game flow (typically when game ends or is abandoned).
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X DELETE "http://localhost:8080/game-flows/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -735,6 +811,7 @@ List WebSocket connections with filtering and pagination.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/websocket-connections/?status=connected&limit=50" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -764,6 +841,7 @@ Get all currently active WebSocket connections.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/websocket-connections/active" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -797,6 +875,7 @@ Get all connections for a specific device.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/websocket-connections/device/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -819,6 +898,7 @@ Get WebSocket connection statistics (total, active, avg duration).
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/websocket-connections/stats" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -851,6 +931,7 @@ Get a specific WebSocket connection by ID.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/websocket-connections/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -900,6 +981,7 @@ List all device sessions with optional filtering.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/device-sessions/?user_id=550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -937,6 +1019,7 @@ Get a specific device session by device ID.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/device-sessions/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -978,6 +1061,7 @@ Update device session metadata (app version, preferences, etc.).
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X PATCH "http://localhost:8080/device-sessions/550e8400-e29b-41d4-a716-446655440000/metadata" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
@@ -1014,6 +1098,7 @@ Get all WebSocket connections for a specific device session.
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/device-sessions/550e8400-e29b-41d4-a716-446655440000/connections" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
@@ -1037,6 +1122,7 @@ Get device session statistics (total devices, active users, avg sessions).
 - **500 Server Error:** Database error
 
 **cURL Example:**
+
 ```bash
 curl -X GET "http://localhost:8080/device-sessions/stats" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"

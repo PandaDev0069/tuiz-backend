@@ -81,7 +81,7 @@ npm run typecheck  # Verify fixes
 
 **Files Created**:
 
-1. ✅ `src/hooks/useGameRoom.ts` (287 lines) - *Pre-existing*
+1. ✅ `src/hooks/useGameRoom.ts` (287 lines) - _Pre-existing_
    - Player join/leave management
    - Room state synchronization
    - Host controls integration

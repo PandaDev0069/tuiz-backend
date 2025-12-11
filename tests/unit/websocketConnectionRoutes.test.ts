@@ -301,7 +301,12 @@ describe('WebSocket Connections Routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.connections).toHaveLength(2);
-      expect(response.body.connections.every((c: any) => c.device_id === 'device-1')).toBe(true);
+      interface Connection {
+        device_id: string;
+      }
+      expect(response.body.connections.every((c: Connection) => c.device_id === 'device-1')).toBe(
+        true,
+      );
     });
 
     it('should require device_id parameter', async () => {
@@ -337,14 +342,19 @@ describe('WebSocket Connections Routes', () => {
       // Mock count queries for each status
       mockSupabaseAdmin.from = vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockImplementation((field: string, value: string) => {
-            const counts: Record<string, number> = {
-              active: 10,
-              disconnected: 25,
-              timeout: 5,
-            };
-            return Promise.resolve({ data: null, error: null, count: counts[value] });
-          }),
+          eq: vi
+            .fn<[string, string], Promise<{ data: null; error: null; count: number }>>()
+            .mockImplementation((field, value) => {
+              const counts: Record<string, number> = {
+                active: 10,
+                disconnected: 25,
+                timeout: 5,
+              };
+              const count = Object.prototype.hasOwnProperty.call(counts, value)
+                ? counts[value as keyof typeof counts]
+                : 0;
+              return Promise.resolve({ data: null, error: null, count });
+            }),
         }),
       });
 
@@ -444,7 +454,7 @@ describe('WebSocket Connections Routes', () => {
 
       // With mocked auth, all should pass (return 200, 400, 404, or 500)
       for (const endpoint of endpoints) {
-        const response = await (request(app) as any)[endpoint.method](endpoint.path);
+        const response = await request(app).get(endpoint.path);
         expect([200, 400, 404, 500]).toContain(response.status);
       }
     });

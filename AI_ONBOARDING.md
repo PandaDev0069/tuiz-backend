@@ -17,17 +17,20 @@ You're part of a **2-AI coordinated development team** building a real-time mult
 ## ⚡ Quick Start (60 seconds)
 
 ### Step 1: Read Current Status (30 sec)
+
 ```bash
 # Open this file first
 AI_STATUS.md
 ```
 
 This tells you:
+
 - Who's working on what RIGHT NOW
 - What tasks are available for you
 - Current project progress
 
 ### Step 2: Check Available Tasks (30 sec)
+
 ```bash
 # Then read this
 AI_TASKS.md
@@ -36,7 +39,8 @@ AI_TASKS.md
 Look for tasks marked: ⏳ **AVAILABLE**
 
 ### Step 3: Start Working
-1. Update `AI_STATUS.md` - change task to 🔄 **IN PROGRESS** 
+
+1. Update `AI_STATUS.md` - change task to 🔄 **IN PROGRESS**
 2. Post in `AI_MESSAGES.md` - announce what you're doing
 3. Start coding!
 
@@ -46,22 +50,24 @@ Look for tasks marked: ⏳ **AVAILABLE**
 
 ### Coordination Files (tuiz-backend/)
 
-| File | Purpose | When to Read | Update Frequency |
-|------|---------|--------------|------------------|
-| `AI_STATUS.md` | Current work snapshot | Before starting | Every task change |
-| `AI_TASKS.md` | Task assignments | When picking task | When completing |
-| `AI_MESSAGES.md` | Inter-AI communication | Every 30-60 min | Every 30-60 min |
-| `AI_TECHNICAL.md` | Code patterns & specs | When coding | Rarely |
+| File              | Purpose                | When to Read      | Update Frequency  |
+| ----------------- | ---------------------- | ----------------- | ----------------- |
+| `AI_STATUS.md`    | Current work snapshot  | Before starting   | Every task change |
+| `AI_TASKS.md`     | Task assignments       | When picking task | When completing   |
+| `AI_MESSAGES.md`  | Inter-AI communication | Every 30-60 min   | Every 30-60 min   |
+| `AI_TECHNICAL.md` | Code patterns & specs  | When coding       | Rarely            |
 
 ### Code Repositories
 
 **Backend** (`tuiz-backend/`):
+
 - Express.js + TypeScript + Socket.io
 - REST API routes in `src/routes/`
 - WebSocket logic in `src/services/`
 - Tests in `tests/`
 
 **Frontend** (`tuiz-frontend/`):
+
 - Next.js 15 + React 19 + TypeScript
 - Pages in `src/app/(pages)/`
 - Hooks in `src/hooks/`
@@ -80,6 +86,7 @@ Look for tasks marked: ⏳ **AVAILABLE**
 ### When Starting a Task
 
 **Update `AI_STATUS.md`**:
+
 ```markdown
 ### AI Session [Your #] - ACTIVE
 
@@ -89,6 +96,7 @@ Look for tasks marked: ⏳ **AVAILABLE**
 ```
 
 **Post in `AI_MESSAGES.md`**:
+
 ```markdown
 ### Message #[next number] - AI Session [Your #] (HH:MM JST)
 
@@ -101,8 +109,10 @@ Look for tasks marked: ⏳ **AVAILABLE**
 ### While Working (Every 30-60 min)
 
 **Add progress update to `AI_MESSAGES.md`**:
+
 ```markdown
-**Progress Update**: 
+**Progress Update**:
+
 - ✅ Completed: [What's done]
 - 🔄 Working on: [Current work]
 - ⏳ Next: [What's next]
@@ -111,6 +121,7 @@ Look for tasks marked: ⏳ **AVAILABLE**
 ### After Completing a Task
 
 1. **Run quality checks**:
+
 ```bash
 npm run typecheck
 npm run lint
@@ -118,21 +129,24 @@ npm test
 ```
 
 2. **Commit changes**:
+
 ```bash
 git add [files]
 git commit -m "type(scope): description"
 ```
 
 3. **Update `AI_STATUS.md`**:
+
 ```markdown
 **Status**: ⏳ AVAILABLE
 **Last completed**: [Task name] - Commit [hash]
 ```
 
 4. **Update `AI_TASKS.md`**:
-Change task status from 🔄 to ✅
+   Change task status from 🔄 to ✅
 
 5. **Post completion in `AI_MESSAGES.md`**:
+
 ```markdown
 ### Message #[number] - TASK COMPLETE
 
@@ -147,6 +161,7 @@ Change task status from 🔄 to ✅
 ## 🚨 Critical Rules
 
 ### DO:
+
 ✅ **Read status files before starting**  
 ✅ **Update status every 30-60 minutes**  
 ✅ **Run typecheck before committing**  
@@ -155,6 +170,7 @@ Change task status from 🔄 to ✅
 ✅ **Be specific in commit messages**
 
 ### DON'T:
+
 ❌ **Start work without checking status**  
 ❌ **Work on IN PROGRESS tasks**  
 ❌ **Commit without quality checks**  
@@ -212,6 +228,7 @@ Change task status from 🔄 to ✅
 ### Quality Check Commands
 
 **Frontend**:
+
 ```bash
 cd tuiz-frontend/
 npm run typecheck    # Must pass
@@ -220,6 +237,7 @@ npm test             # Should pass
 ```
 
 **Backend**:
+
 ```bash
 cd tuiz-backend/
 npm run typecheck    # Must pass
@@ -256,6 +274,7 @@ type(scope): description
 ```
 
 **Examples**:
+
 - `feat(frontend): create useGameFlow hook for question control`
 - `fix(backend): resolve TypeScript errors in game routes`
 - `docs(coordination): update AI status with current tasks`
@@ -266,16 +285,19 @@ type(scope): description
 ## 📊 Understanding Task Priorities
 
 ### 🔴 HIGH PRIORITY - Critical Path
+
 **Do these first**. They block other work.
 
 Example: Frontend hooks block screen integration.
 
 ### 🟡 MEDIUM PRIORITY - Important but not blocking
+
 **Do after HIGH**. Improve quality but don't block progress.
 
 Example: API documentation, code cleanup.
 
 ### 🟢 LOW PRIORITY - Nice to have
+
 **Do when nothing else available**. Polish and optimization.
 
 Example: E2E tests, performance tuning.
@@ -285,9 +307,11 @@ Example: E2E tests, performance tuning.
 ## 🎯 Current Project Context
 
 ### What We're Building
+
 **TUIZ** - Real-time multiplayer quiz platform (Japanese-first UI)
 
 **Tech Stack**:
+
 - **Backend**: Express.js + Socket.io + Supabase + TypeScript
 - **Frontend**: Next.js 15 + React 19 + Socket.io-client + TypeScript
 - **Database**: PostgreSQL via Supabase
@@ -296,6 +320,7 @@ Example: E2E tests, performance tuning.
 ### Architecture Pattern
 
 **Game Flow**:
+
 1. Host creates game via REST API → Gets room code
 2. Players join via REST API + WebSocket
 3. Real-time updates via Socket.io events
@@ -303,18 +328,23 @@ Example: E2E tests, performance tuning.
 5. Final results stored in database
 
 **Code Pattern** (Frontend hooks):
+
 ```typescript
 // All hooks follow this pattern
 export function useGameX() {
   // 1. Wrap useWebSocket for connection
-  const ws = useWebSocket(cfg.apiBase, { /* events */ });
-  
+  const ws = useWebSocket(cfg.apiBase, {
+    /* events */
+  });
+
   // 2. Use gameApi for REST operations
   const { data, error } = await gameApi.someOperation();
-  
+
   // 3. Listen to Socket.io events
-  ws.on('game:event', (data) => { /* handle */ });
-  
+  ws.on('game:event', (data) => {
+    /* handle */
+  });
+
   // 4. Provide clean API
   return { state, actions };
 }
@@ -323,12 +353,14 @@ export function useGameX() {
 ### Current Progress (Check AI_STATUS.md for latest)
 
 **Backend**: ~95% complete
+
 - ✅ REST API routes
 - ✅ WebSocket routes
 - ✅ Database migrations
 - ⚠️ Test lint fixes pending
 
 **Frontend**: ~50% complete
+
 - ✅ API client (gameApi.ts)
 - ✅ Context providers
 - 🔄 Game hooks (1 of 4 done)
@@ -340,20 +372,22 @@ export function useGameX() {
 
 ### Must Read Before Coding
 
-| File | Why Important |
-|------|---------------|
-| `AI_TECHNICAL.md` | Socket.io event names (MUST MATCH!) |
-| `.github/copilot-instructions.md` | Project standards |
-| `docs/ARCHITECTURE.md` | System design |
+| File                              | Why Important                       |
+| --------------------------------- | ----------------------------------- |
+| `AI_TECHNICAL.md`                 | Socket.io event names (MUST MATCH!) |
+| `.github/copilot-instructions.md` | Project standards                   |
+| `docs/ARCHITECTURE.md`            | System design                       |
 
 ### Common Edit Locations
 
 **Backend**:
+
 - `src/routes/*.ts` - REST endpoints
 - `src/services/*.ts` - Business logic
 - `tests/unit/*.test.ts` - Unit tests
 
 **Frontend**:
+
 - `src/hooks/*.ts` - React hooks
 - `src/services/*.ts` - API clients
 - `src/app/(pages)/*/page.tsx` - UI screens
@@ -361,6 +395,7 @@ export function useGameX() {
 ### Never Edit Without Coordination
 
 ⚠️ **Announce in `AI_MESSAGES.md` before touching**:
+
 - `src/app.ts` (backend route registration)
 - `src/types/*` (shared type definitions)
 - Database migration files
@@ -371,6 +406,7 @@ export function useGameX() {
 ## 🆘 Troubleshooting
 
 ### TypeScript Errors
+
 ```bash
 npm run typecheck
 # Read errors carefully
@@ -379,6 +415,7 @@ npm run typecheck
 ```
 
 ### ESLint Errors
+
 ```bash
 npm run lint
 # Follow suggested fixes
@@ -387,6 +424,7 @@ npm run lint
 ```
 
 ### Test Failures
+
 ```bash
 npm test
 # Read error messages
@@ -396,6 +434,7 @@ npm test
 ```
 
 ### Git Conflicts
+
 ```bash
 git status
 # If conflicts, read both versions
@@ -405,6 +444,7 @@ git status
 ```
 
 ### Can't Find Task Details
+
 1. Task overview: `AI_TASKS.md`
 2. Technical specs: `AI_TECHNICAL.md`
 3. Past messages: `AI_MESSAGES.md`
@@ -417,6 +457,7 @@ git status
 ### Understanding the Codebase
 
 **If you're new to**:
+
 - Next.js → Read `docs/FRONTEND-STANDARDS.md`
 - Socket.io → Read `docs/WEBSOCKET_API.md`
 - Testing → Read `docs/TESTING.md`
@@ -425,6 +466,7 @@ git status
 ### Best Practices
 
 **From experienced AI sessions**:
+
 - ✅ Read existing similar files before creating new ones
 - ✅ Follow established patterns (don't reinvent)
 - ✅ Test incrementally (don't wait until end)
@@ -439,7 +481,8 @@ git status
 
 **Start with**: Task 4 (API Documentation) or Task 1 (Test Cleanup)
 
-**Why**: 
+**Why**:
+
 - Low risk of conflicts
 - Helps you learn the codebase
 - Provides value immediately
@@ -491,6 +534,7 @@ Before you start coding, confirm:
 ## 🎯 Success Metrics
 
 **You're doing great if**:
+
 - ✅ Other AI knows what you're working on
 - ✅ No merge conflicts
 - ✅ TypeScript compilation passes
@@ -499,6 +543,7 @@ Before you start coding, confirm:
 - ✅ Code quality improves
 
 **Red flags**:
+
 - ❌ Working >1 hour without status update
 - ❌ Committing without running typecheck
 - ❌ Starting work other AI is doing
@@ -510,6 +555,7 @@ Before you start coding, confirm:
 ## 🎉 Final Words
 
 **Remember**:
+
 - We're a **team** - coordination is key
 - **Communication** via status files is critical
 - **Quality** over speed - run all checks

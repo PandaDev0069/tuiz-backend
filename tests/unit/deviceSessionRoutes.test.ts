@@ -429,12 +429,17 @@ describe('Device Sessions Routes', () => {
       mockSupabaseAdmin.from = vi.fn().mockImplementation((table: string) => {
         if (table === 'device_sessions') {
           return {
-            select: vi.fn().mockImplementation((fields: string, options?: any) => {
-              if (options?.count === 'exact') {
-                return Promise.resolve(countMock);
-              }
-              return Promise.resolve({ data: mockSessions, error: null });
-            }),
+            select: vi
+              .fn<
+                [string, ({ count?: 'exact' } | undefined)?],
+                Promise<{ data?: unknown[]; error: null; count?: number }>
+              >()
+              .mockImplementation((fields: string, options?: { count?: 'exact' }) => {
+                if (options?.count === 'exact') {
+                  return Promise.resolve(countMock);
+                }
+                return Promise.resolve({ data: mockSessions, error: null });
+              }),
           };
         }
         return {};
@@ -452,12 +457,17 @@ describe('Device Sessions Routes', () => {
 
     it('should handle zero devices', async () => {
       mockSupabaseAdmin.from = vi.fn().mockReturnValue({
-        select: vi.fn().mockImplementation((_fields: string, options?: any) => {
-          if (options?.count === 'exact') {
-            return Promise.resolve({ count: 0, error: null });
-          }
-          return Promise.resolve({ data: [], error: null });
-        }),
+        select: vi
+          .fn<
+            [string, ({ count?: 'exact' } | undefined)?],
+            Promise<{ data?: unknown[]; error: null; count?: number }>
+          >()
+          .mockImplementation((_fields: string, options?: { count?: 'exact' }) => {
+            if (options?.count === 'exact') {
+              return Promise.resolve({ count: 0, error: null });
+            }
+            return Promise.resolve({ data: [], error: null });
+          }),
       });
 
       const response = await request(app).get('/device-sessions/stats/summary');
@@ -492,7 +502,23 @@ describe('Device Sessions Routes', () => {
 
       // With mocked auth, all should pass (return 200, 400, 404, or 500)
       for (const endpoint of endpoints) {
-        const response = await (request(app) as any)[endpoint.method](endpoint.path);
+        let response;
+        switch (endpoint.method) {
+          case 'get':
+            response = await request(app).get(endpoint.path);
+            break;
+          case 'post':
+            response = await request(app).post(endpoint.path);
+            break;
+          case 'patch':
+            response = await request(app).patch(endpoint.path);
+            break;
+          case 'delete':
+            response = await request(app).delete(endpoint.path);
+            break;
+          default:
+            throw new Error('Unsupported method');
+        }
         expect([200, 400, 404, 500]).toContain(response.status);
       }
     });

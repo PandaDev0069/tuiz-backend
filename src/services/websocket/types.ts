@@ -38,6 +38,27 @@ export interface WebSocketEvents {
   // Game events (extensible for future game development)
   'game:action': (data: { roomId: string; action: string; payload: unknown }) => void;
   'game:state': (data: { roomId: string; state: unknown }) => void;
+
+  // Game flow
+  'game:flow:start': (data: {
+    roomId: string;
+    questionId: string;
+    startsAt: number;
+    endsAt: number;
+  }) => void;
+  'game:flow:next': (data: { roomId: string; nextQuestionId: string }) => void;
+  'game:flow:end': (data: { roomId: string }) => void;
+
+  // Answers
+  'game:answer:submit': (data: {
+    roomId: string;
+    playerId: string;
+    questionId: string;
+    answer: string | number;
+  }) => void;
+
+  // Leaderboard
+  'game:leaderboard:request': (data: { roomId: string }) => void;
 }
 
 export interface ServerEvents {
@@ -72,4 +93,32 @@ export interface ServerEvents {
     timestamp: string;
   }) => void;
   'game:state': (data: { roomId: string; state: unknown }) => void;
+
+  // Game flow broadcasts
+  'game:question:started': (data: {
+    roomId: string;
+    question: { id: string };
+    endsAt: number;
+  }) => void;
+  'game:question:changed': (data: { roomId: string; question: { id: string } }) => void;
+  'game:question:ended': (data: { roomId: string }) => void;
+
+  // Answer responses/broadcasts
+  'game:answer:accepted': (data: {
+    roomId: string;
+    playerId: string;
+    questionId: string;
+    submittedAt: string;
+  }) => void;
+  'game:answer:stats:update': (data: {
+    roomId: string;
+    questionId: string;
+    counts: Record<string, number>;
+  }) => void;
+
+  // Leaderboard
+  'game:leaderboard:update': (data: {
+    roomId: string;
+    rankings: Array<{ playerId: string; score: number; rank: number }>;
+  }) => void;
 }
