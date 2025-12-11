@@ -16,6 +16,7 @@ import publishingRoutes from './routes/publishing';
 import questionRoutes from './routes/questions';
 import quizRoutes from './routes/quiz';
 import quizLibraryRoutes from './routes/quiz-library';
+import roomParticipantRoutes from './routes/room-participants';
 import uploadRoutes from './routes/upload';
 import { AuthenticatedRequest } from './types/auth';
 
@@ -51,7 +52,9 @@ export function createApp() {
   app.use('/games', gameEventRoutes);
   app.use('/games', playerRoutes);
   app.use('/games', gamePlayerDataRoutes);
+  app.use('/games', roomParticipantRoutes);
   app.use(playerRoutes);
+  app.use(roomParticipantRoutes);
 
   // Example protected route - add your protected routes here
   app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
