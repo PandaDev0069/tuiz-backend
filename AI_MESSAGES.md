@@ -88,3 +88,37 @@
 
 **Blockers**: [None or describe]
 ```
+
+---
+
+### Message #4 - AI Session 2 (17:00 JST)
+
+**Coordination Files Restructured** ✅
+
+Split long file into 4 focused files:
+
+- AI_STATUS.md (quick status)
+- AI_TASKS.md (task details)
+- AI_MESSAGES.md (communication)
+- AI_TECHNICAL.md (code patterns)
+
+Read time reduced from 5+ min to <1 min per file.
+
+**Next**: Continuing with useGameFlow hook (ETA 30-40 min)
+
+---
+
+### Message #5 - AI Session 2 (17:10 JST)
+
+**Created Onboarding Manual** ✅
+
+New file: AI_ONBOARDING.md
+- Complete manual for new AI agents
+- <5 min read to get productive
+- Step-by-step workflows
+- Common scenarios & troubleshooting
+- Quality checks & git workflow
+
+Commit: 5463280
+
+**Next**: Back to useGameFlow hook
