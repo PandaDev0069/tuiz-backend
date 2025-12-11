@@ -6,7 +6,9 @@ import { errorMw } from './middleware/error';
 import answerRoutes from './routes/answers';
 import authRoutes from './routes/auth';
 import codeRoutes from './routes/codes';
+import deviceSessionRoutes from './routes/device-sessions';
 import gameEventRoutes from './routes/game-events';
+import gameFlowRoutes from './routes/game-flows';
 import gamePlayerDataRoutes from './routes/game-player-data';
 import gameStateRoutes from './routes/game-state';
 import gameRoutes from './routes/games';
@@ -19,6 +21,7 @@ import quizRoutes from './routes/quiz';
 import quizLibraryRoutes from './routes/quiz-library';
 import roomParticipantRoutes from './routes/room-participants';
 import uploadRoutes from './routes/upload';
+import websocketConnectionRoutes from './routes/websocket-connections';
 import { AuthenticatedRequest } from './types/auth';
 
 export function createApp() {
@@ -51,10 +54,13 @@ export function createApp() {
   app.use('/quiz-library', quizLibraryRoutes);
   app.use('/games', gameRoutes);
   app.use('/games', gameStateRoutes);
+  app.use('/games', gameFlowRoutes);
   app.use('/games', gameEventRoutes);
   app.use('/games', playerRoutes);
   app.use('/games', gamePlayerDataRoutes);
   app.use('/games', roomParticipantRoutes);
+  app.use('/websocket-connections', websocketConnectionRoutes);
+  app.use('/device-sessions', deviceSessionRoutes);
   app.use(playerRoutes);
   app.use(roomParticipantRoutes);
 
