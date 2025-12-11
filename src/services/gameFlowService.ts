@@ -208,25 +208,81 @@ export class GameFlowService {
    *
    * @param gameId - The game ID
    * @param updates - Partial updates to apply
-   * @returns Success status
+   * @returns Result object with success status and updated game flow or error
    */
   async updateGameFlow(
     gameId: string,
     updates: Partial<Omit<GameFlow, 'id' | 'game_id' | 'created_at' | 'updated_at'>>,
-  ): Promise<boolean> {
+  ): Promise<GameFlowCreateResult> {
     try {
-      const { error } = await this.client.from('game_flows').update(updates).eq('game_id', gameId);
+      const { data: gameFlow, error } = await this.client
+        .from('game_flows')
+        .update(updates)
+        .eq('game_id', gameId)
+        .select()
+        .single();
 
       if (error) {
         logger.error({ error, gameId, updates }, 'Error updating game flow');
-        return false;
+        return {
+          success: false,
+          error: 'Failed to update game flow',
+        };
       }
 
       logger.info({ gameId, updates }, 'Game flow updated successfully');
-      return true;
+      return {
+        success: true,
+        gameFlow: gameFlow as GameFlow,
+      };
     } catch (error) {
       logger.error({ error, gameId, updates }, 'Unexpected error updating game flow');
-      return false;
+      return {
+        success: false,
+        error: 'Unexpected error updating game flow',
+      };
+    }
+  }
+
+  /**
+   * Get game flow by game ID
+   *
+   * @param gameId - The game ID to fetch flow for
+   * @returns Result object with success status and game flow or error
+   */
+  async getGameFlow(gameId: string): Promise<GameFlowCreateResult> {
+    try {
+      const { data, error } = await this.client
+        .from('game_flows')
+        .select('*')
+        .eq('game_id', gameId)
+        .maybeSingle();
+
+      if (error) {
+        logger.error({ error, gameId }, 'Error fetching game flow');
+        return {
+          success: false,
+          error: 'Failed to fetch game flow',
+        };
+      }
+
+      if (!data) {
+        return {
+          success: false,
+          error: 'Game flow not found',
+        };
+      }
+
+      return {
+        success: true,
+        gameFlow: data as GameFlow,
+      };
+    } catch (error) {
+      logger.error({ error, gameId }, 'Unexpected error fetching game flow');
+      return {
+        success: false,
+        error: 'Unexpected error fetching game flow',
+      };
     }
   }
 

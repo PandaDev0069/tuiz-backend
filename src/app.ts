@@ -8,6 +8,7 @@ import authRoutes from './routes/auth';
 import codeRoutes from './routes/codes';
 import gameEventRoutes from './routes/game-events';
 import gamePlayerDataRoutes from './routes/game-player-data';
+import gameStateRoutes from './routes/game-state';
 import gameRoutes from './routes/games';
 import health from './routes/health';
 import playerRoutes from './routes/players';
@@ -49,6 +50,7 @@ export function createApp() {
   app.use('/quiz', codeRoutes);
   app.use('/quiz-library', quizLibraryRoutes);
   app.use('/games', gameRoutes);
+  app.use('/games', gameStateRoutes);
   app.use('/games', gameEventRoutes);
   app.use('/games', playerRoutes);
   app.use('/games', gamePlayerDataRoutes);
