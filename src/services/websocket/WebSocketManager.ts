@@ -72,6 +72,29 @@ export class WebSocketManager {
     socket.on('game:state', (data) => {
       this.handleGameState(socket, data.roomId, data.state);
     });
+
+    // Game flow events
+    socket.on('game:flow:start', (data) => {
+      this.handleGameFlowStart(socket, data.roomId, data.questionId, data.startsAt, data.endsAt);
+    });
+
+    socket.on('game:flow:next', (data) => {
+      this.handleGameFlowNext(socket, data.roomId, data.nextQuestionId);
+    });
+
+    socket.on('game:flow:end', (data) => {
+      this.handleGameFlowEnd(socket, data.roomId);
+    });
+
+    // Answer events
+    socket.on('game:answer:submit', (data) => {
+      this.handleAnswerSubmit(socket, data.roomId, data.playerId, data.questionId, data.answer);
+    });
+
+    // Leaderboard
+    socket.on('game:leaderboard:request', (data) => {
+      this.handleLeaderboardRequest(socket, data.roomId);
+    });
   }
 
   private async registerClient(socket: TypedSocket, data: ConnectionInfo): Promise<void> {
@@ -238,6 +261,105 @@ export class WebSocketManager {
     });
 
     logger.info(`Game state updated in room ${roomId}`);
+  }
+
+  private handleGameFlowStart(
+    socket: TypedSocket,
+    roomId: string,
+    questionId: string,
+    startsAt: number,
+    endsAt: number,
+  ): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    room.gameData = {
+      ...(room.gameData || {}),
+      currentQuestionId: questionId,
+      questionWindow: { startsAt, endsAt },
+      answerCounts: new Map<string, number>(),
+      scores: room.gameData?.scores || {},
+    };
+
+    this.io.to(roomId).emit('game:question:started', {
+      roomId,
+      question: { id: questionId },
+      endsAt,
+    });
+
+    logger.info(`Question started in room ${roomId}: ${questionId}`);
+  }
+
+  private handleGameFlowNext(socket: TypedSocket, roomId: string, nextQuestionId: string): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    room.gameData = {
+      ...(room.gameData || {}),
+      currentQuestionId: nextQuestionId,
+      answerCounts: new Map<string, number>(),
+    };
+
+    this.io.to(roomId).emit('game:question:changed', {
+      roomId,
+      question: { id: nextQuestionId },
+    });
+
+    logger.info(`Question changed in room ${roomId}: ${nextQuestionId}`);
+  }
+
+  private handleGameFlowEnd(socket: TypedSocket, roomId: string): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    if (room.gameData) {
+      delete room.gameData.questionWindow;
+      delete room.gameData.currentQuestionId;
+    }
+
+    this.io.to(roomId).emit('game:question:ended', { roomId });
+    logger.info(`Question ended in room ${roomId}`);
+  }
+
+  private handleAnswerSubmit(
+    socket: TypedSocket,
+    roomId: string,
+    playerId: string,
+    questionId: string,
+    answer: string | number,
+  ): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    const gd = (room.gameData = { ...(room.gameData || {}) });
+    const counts =
+      (gd.answerCounts as Map<string, number> | undefined) || new Map<string, number>();
+    gd.answerCounts = counts;
+    const key = String(answer);
+    const nextCount = (counts.get(key) ?? 0) + 1;
+    counts.set(key, nextCount);
+
+    // Acknowledge to the submitter
+    socket.emit('game:answer:accepted', {
+      roomId,
+      playerId,
+      questionId,
+      submittedAt: new Date().toISOString(),
+    });
+
+    // Broadcast aggregate stats
+    const answerCounts = Object.fromEntries(counts);
+    this.io.to(roomId).emit('game:answer:stats:update', {
+      roomId,
+      questionId,
+      counts: answerCounts,
+    });
+
+    logger.info(`Answer submitted in room ${roomId} by ${playerId} for ${questionId}`);
+  }
+
+  private handleLeaderboardRequest(socket: TypedSocket, roomId: string): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    const scores = (room.gameData?.scores as Record<string, number>) || {};
+    const rankings = Object.entries(scores)
+      .map(([playerId, score]) => ({ playerId, score }))
+      .sort((a, b) => b.score - a.score)
+      .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
+
+    socket.emit('game:leaderboard:update', { roomId, rankings });
+    logger.info(`Leaderboard requested for room ${roomId}`);
   }
 
   private startHeartbeatChecker(): void {
