@@ -75,7 +75,14 @@ export class WebSocketManager {
 
     // Game flow events
     socket.on('game:flow:start', (data) => {
-      this.handleGameFlowStart(socket, data.roomId, data.questionId, data.startsAt, data.endsAt);
+      this.handleGameFlowStart(
+        socket,
+        data.roomId,
+        data.questionId,
+        data.startsAt ?? 0,
+        data.endsAt ?? 0,
+        data.questionIndex ?? 0,
+      );
     });
 
     socket.on('game:flow:next', (data) => {
@@ -84,6 +91,20 @@ export class WebSocketManager {
 
     socket.on('game:flow:end', (data) => {
       this.handleGameFlowEnd(socket, data.roomId);
+    });
+
+    // Direct question events (aligned with frontend)
+    socket.on('game:question:started', (data) => {
+      this.handleQuestionStarted(socket, data.roomId, data.question, data.startsAt, data.endsAt);
+    });
+
+    socket.on('game:question:ended', (data) => {
+      this.handleQuestionEnded(socket, data.roomId, data.questionId);
+    });
+
+    // Phase changes (leaderboard/explanation/countdown/podium)
+    socket.on('game:phase:change', (data) => {
+      this.handlePhaseChange(socket, data.roomId, data.phase);
     });
 
     // Answer events
@@ -269,6 +290,7 @@ export class WebSocketManager {
     questionId: string,
     startsAt: number,
     endsAt: number,
+    questionIndex?: number,
   ): void {
     const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
     room.gameData = {
@@ -281,7 +303,8 @@ export class WebSocketManager {
 
     this.io.to(roomId).emit('game:question:started', {
       roomId,
-      question: { id: questionId },
+      question: { id: questionId, index: questionIndex },
+      startsAt,
       endsAt,
     });
 
@@ -311,8 +334,51 @@ export class WebSocketManager {
       delete room.gameData.currentQuestionId;
     }
 
-    this.io.to(roomId).emit('game:question:ended', { roomId });
+    this.io.to(roomId).emit('game:question:ended', { roomId, questionId: undefined });
     logger.info(`Question ended in room ${roomId}`);
+  }
+
+  private handleQuestionStarted(
+    socket: TypedSocket,
+    roomId: string,
+    question: { id: string; index?: number },
+    startsAt?: number,
+    endsAt?: number,
+  ): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    room.gameData = {
+      ...(room.gameData || {}),
+      currentQuestionId: question.id,
+      questionWindow:
+        startsAt && endsAt ? { startsAt, endsAt } : room.gameData?.questionWindow || undefined,
+      answerCounts: room.gameData?.answerCounts || new Map<string, number>(),
+      scores: room.gameData?.scores || {},
+    };
+
+    this.io.to(roomId).emit('game:question:started', {
+      roomId,
+      question,
+      startsAt,
+      endsAt,
+    });
+
+    logger.info(`Question started (direct) in room ${roomId}: ${question.id}`);
+  }
+
+  private handleQuestionEnded(socket: TypedSocket, roomId: string, questionId?: string): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    if (room.gameData) {
+      delete room.gameData.questionWindow;
+      delete room.gameData.currentQuestionId;
+    }
+
+    this.io.to(roomId).emit('game:question:ended', { roomId, questionId });
+    logger.info(`Question ended (direct) in room ${roomId}: ${questionId || 'unknown'}`);
+  }
+
+  private handlePhaseChange(socket: TypedSocket, roomId: string, phase: string): void {
+    this.io.to(roomId).emit('game:phase:change', { roomId, phase });
+    logger.info(`Phase change in room ${roomId}: ${phase}`);
   }
 
   private handleAnswerSubmit(

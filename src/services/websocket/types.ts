@@ -43,11 +43,24 @@ export interface WebSocketEvents {
   'game:flow:start': (data: {
     roomId: string;
     questionId: string;
+    questionIndex?: number;
     startsAt: number;
     endsAt: number;
   }) => void;
   'game:flow:next': (data: { roomId: string; nextQuestionId: string }) => void;
   'game:flow:end': (data: { roomId: string }) => void;
+
+  // Aligned question events (direct from host)
+  'game:question:started': (data: {
+    roomId: string;
+    question: { id: string; index?: number };
+    startsAt?: number;
+    endsAt?: number;
+  }) => void;
+  'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
+
+  // Phase change broadcast
+  'game:phase:change': (data: { roomId: string; phase: string }) => void;
 
   // Answers
   'game:answer:submit': (data: {
@@ -97,11 +110,15 @@ export interface ServerEvents {
   // Game flow broadcasts
   'game:question:started': (data: {
     roomId: string;
-    question: { id: string };
-    endsAt: number;
+    question: { id: string; index?: number };
+    endsAt?: number;
+    startsAt?: number;
   }) => void;
   'game:question:changed': (data: { roomId: string; question: { id: string } }) => void;
-  'game:question:ended': (data: { roomId: string }) => void;
+  'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
+
+  // Phase change broadcast
+  'game:phase:change': (data: { roomId: string; phase: string }) => void;
 
   // Answer responses/broadcasts
   'game:answer:accepted': (data: {

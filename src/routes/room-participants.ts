@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { supabase } from '../lib/supabase.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { getRoomParticipantService } from '../services/roomParticipantService.js';
+import { supabase } from '../lib/supabase';
+import { authMiddleware } from '../middleware/auth';
+import { getRoomParticipantService } from '../services/roomParticipantService';
 import {
   CreateRoomParticipantSchema,
   UpdateParticipantStatusSchema,
   ParticipantQuerySchema,
   RejoinRoomSchema,
-} from '../types/roomParticipant.js';
+} from '../types/roomParticipant';
 
 const router = Router();
 const roomParticipantService = getRoomParticipantService(supabase);

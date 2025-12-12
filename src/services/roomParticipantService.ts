@@ -8,8 +8,8 @@ import type {
   RoomParticipantWithPlayer,
   ActiveParticipantsSummary,
   RejoinRoomData,
-} from '../types/roomParticipant.js';
-import { logger } from '../utils/logger.js';
+} from '../types/roomParticipant';
+import { logger } from '../utils/logger';
 
 /**
  * Service for managing room participants

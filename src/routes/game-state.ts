@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { supabaseAdmin } from '../lib/supabase.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { gameFlowService } from '../services/gameFlowService.js';
-import type { AuthenticatedRequest } from '../types/auth.js';
-import { logger } from '../utils/logger.js';
+import { supabaseAdmin } from '../lib/supabase';
+import { authMiddleware } from '../middleware/auth';
+import { gameFlowService } from '../services/gameFlowService';
+import type { AuthenticatedRequest } from '../types/auth';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
