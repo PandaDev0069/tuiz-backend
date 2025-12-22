@@ -146,4 +146,92 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
   }
 });
 
+/**
+ * GET /games/:gameId
+ * Get game details by ID
+ * Public access (for players to verify game exists)
+ */
+router.get('/:gameId', async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+  const { gameId } = req.params;
+
+  try {
+    const { data: game, error: gameError } = await supabaseAdmin
+      .from('games')
+      .select('*')
+      .eq('id', gameId)
+      .maybeSingle();
+
+    if (gameError) {
+      logger.error({ error: gameError, gameId, requestId }, 'Error fetching game');
+      return res.status(500).json({
+        error: 'database_error',
+        message: 'Failed to fetch game',
+        requestId,
+      });
+    }
+
+    if (!game) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Game not found',
+        requestId,
+      });
+    }
+
+    return res.status(200).json(game);
+  } catch (error) {
+    logger.error({ error, gameId, requestId }, 'Unexpected error fetching game');
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Internal server error',
+      requestId,
+    });
+  }
+});
+
+/**
+ * GET /games/by-code/:gameCode
+ * Get game details by room code
+ * Public access (for players to join using room code)
+ */
+router.get('/by-code/:gameCode', async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+  const { gameCode } = req.params;
+
+  try {
+    const { data: game, error: gameError } = await supabaseAdmin
+      .from('games')
+      .select('*')
+      .eq('game_code', gameCode)
+      .maybeSingle();
+
+    if (gameError) {
+      logger.error({ error: gameError, gameCode, requestId }, 'Error fetching game by code');
+      return res.status(500).json({
+        error: 'database_error',
+        message: 'Failed to fetch game',
+        requestId,
+      });
+    }
+
+    if (!game) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Game not found',
+        requestId,
+      });
+    }
+
+    return res.status(200).json(game);
+  } catch (error) {
+    logger.error({ error, gameCode, requestId }, 'Unexpected error fetching game by code');
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Internal server error',
+      requestId,
+    });
+  }
+});
+
 export default router;
