@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
 import { gameFlowService } from '../services/gameFlowService';
+import { playerService } from '../services/playerService';
 import { AuthenticatedRequest } from '../types/auth';
 import { CreateGameSchema, GameStatus } from '../types/game';
 import { logger } from '../utils/logger';
@@ -132,11 +133,44 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
       });
     }
 
+    // Create host player if device_id and player_name are provided
+    let hostPlayer = null;
+    if (input.device_id && input.player_name) {
+      try {
+        const hostPlayerResult = await playerService.createPlayer({
+          game_id: game.id,
+          device_id: input.device_id,
+          player_name: input.player_name,
+          is_logged_in: true, // Host is logged in
+          is_host: true, // Mark as host
+        });
+
+        if (hostPlayerResult.success && hostPlayerResult.player) {
+          hostPlayer = hostPlayerResult.player;
+          logger.info(
+            { gameId: game.id, hostPlayerId: hostPlayer.id, userId },
+            'Host player created successfully',
+          );
+        } else {
+          logger.warn(
+            { gameId: game.id, error: hostPlayerResult.error },
+            'Failed to create host player, but game was created',
+          );
+        }
+      } catch (hostError) {
+        logger.error(
+          { error: hostError, gameId: game.id },
+          'Error creating host player, but game was created',
+        );
+        // Don't fail the request, game was created successfully
+      }
+    }
+
     logger.info(
       { gameId: game.id, gameFlowId: gameFlowResult.gameFlow?.id, userId },
       'Game and game flow created successfully',
     );
-    res.status(201).json({ game });
+    res.status(201).json({ game, host_player: hostPlayer });
   } catch (error) {
     if (error instanceof ZodError) {
       return res.status(400).json({ error: 'validation_error', details: error.issues });

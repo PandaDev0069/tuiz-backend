@@ -158,17 +158,20 @@ export class PlayerService {
         };
       }
 
-      // Increment current_players count
-      const { error: updateError } = await this.client.rpc('increment_game_players', {
-        p_game_id: input.game_id,
-      });
+      // Increment current_players count only for non-host players
+      // Hosts are not counted in the player count
+      if (!input.is_host) {
+        const { error: updateError } = await this.client.rpc('increment_game_players', {
+          p_game_id: input.game_id,
+        });
 
-      if (updateError) {
-        logger.warn(
-          { error: updateError, gameId: input.game_id },
-          'Failed to increment player count',
-        );
-        // Don't fail the request, player was created successfully
+        if (updateError) {
+          logger.warn(
+            { error: updateError, gameId: input.game_id },
+            'Failed to increment player count',
+          );
+          // Don't fail the request, player was created successfully
+        }
       }
 
       logger.info(
@@ -384,6 +387,13 @@ export class PlayerService {
         return false;
       }
 
+      // Check if player is host before deleting
+      const { data: playerData } = await this.client
+        .from('players')
+        .select('is_host')
+        .eq('id', playerId)
+        .single();
+
       const { error } = await this.client.from('players').delete().eq('id', playerId);
 
       if (error) {
@@ -391,17 +401,20 @@ export class PlayerService {
         return false;
       }
 
-      // Decrement current_players count
-      const { error: updateError } = await this.client.rpc('decrement_game_players', {
-        p_game_id: player.game_id,
-      });
+      // Decrement current_players count only for non-host players
+      // Hosts are not counted in the player count
+      if (!playerData?.is_host) {
+        const { error: updateError } = await this.client.rpc('decrement_game_players', {
+          p_game_id: player.game_id,
+        });
 
-      if (updateError) {
-        logger.warn(
-          { error: updateError, gameId: player.game_id },
-          'Failed to decrement player count',
-        );
-        // Don't fail the request, player was deleted successfully
+        if (updateError) {
+          logger.warn(
+            { error: updateError, gameId: player.game_id },
+            'Failed to decrement player count',
+          );
+          // Don't fail the request, player was deleted successfully
+        }
       }
 
       logger.info({ playerId, gameId: player.game_id }, 'Player deleted successfully');

@@ -327,6 +327,7 @@ export const CreateGameSchema = z.object({
   quiz_set_id: z.string().uuid('Invalid quiz set ID'),
   game_settings: GameSettingsSchema.optional(),
   player_name: z.string().min(1).max(100).optional(),
+  device_id: z.string().uuid().optional(), // Host device ID for creating host player
 });
 
 // Join Game Schema
