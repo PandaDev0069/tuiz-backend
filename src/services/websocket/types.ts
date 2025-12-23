@@ -138,4 +138,13 @@ export interface ServerEvents {
     roomId: string;
     rankings: Array<{ playerId: string; score: number; rank: number }>;
   }) => void;
+
+  // Player management
+  'game:player-kicked': (data: {
+    player_id: string;
+    player_name: string;
+    game_id: string;
+    kicked_by: string;
+    timestamp: string;
+  }) => void;
 }

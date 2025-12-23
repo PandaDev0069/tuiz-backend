@@ -2,6 +2,7 @@ import express from 'express';
 import { ZodError } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
+import { wsManager } from '../server';
 import { gameFlowService } from '../services/gameFlowService';
 import { playerService } from '../services/playerService';
 import { AuthenticatedRequest } from '../types/auth';
@@ -267,5 +268,131 @@ router.get('/by-code/:gameCode', async (req, res) => {
     });
   }
 });
+
+/**
+ * DELETE /games/:gameId/players/:playerId
+ * Ban/kick a player from the game
+ * Requires authentication (host only)
+ */
+router.delete(
+  '/:gameId/players/:playerId',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res) => {
+    const requestId = req.headers['x-request-id'] as string;
+    const { gameId, playerId } = req.params;
+    const userId = req.user?.id;
+
+    try {
+      // Verify the game exists and user is the host
+      const { data: game, error: gameError } = await supabaseAdmin
+        .from('games')
+        .select('id, user_id, game_code')
+        .eq('id', gameId)
+        .maybeSingle();
+
+      if (gameError) {
+        logger.error({ error: gameError, gameId, requestId }, 'Error fetching game');
+        return res.status(500).json({
+          error: 'database_error',
+          message: 'Failed to verify game',
+          requestId,
+        });
+      }
+
+      if (!game) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game not found',
+          requestId,
+        });
+      }
+
+      // Verify user is the host
+      if (game.user_id !== userId) {
+        logger.warn(
+          { gameId, userId, gameUserId: game.user_id },
+          'Unauthorized attempt to ban player',
+        );
+        return res.status(403).json({
+          error: 'forbidden',
+          message: 'Only the game host can ban players',
+          requestId,
+        });
+      }
+
+      // Get player info before deleting (for WebSocket event)
+      const { data: player, error: playerError } = await supabaseAdmin
+        .from('players')
+        .select('id, player_name, device_id, is_host')
+        .eq('id', playerId)
+        .eq('game_id', gameId)
+        .maybeSingle();
+
+      if (playerError) {
+        logger.error({ error: playerError, playerId, gameId }, 'Error fetching player');
+        return res.status(500).json({
+          error: 'database_error',
+          message: 'Failed to fetch player',
+          requestId,
+        });
+      }
+
+      if (!player) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Player not found in this game',
+          requestId,
+        });
+      }
+
+      // Prevent banning the host
+      if (player.is_host) {
+        return res.status(400).json({
+          error: 'invalid_request',
+          message: 'Cannot ban the host player',
+          requestId,
+        });
+      }
+
+      // Delete the player (this also decrements current_players count)
+      const success = await playerService.deletePlayer(playerId);
+
+      if (!success) {
+        logger.warn({ playerId, gameId }, 'Failed to delete player');
+        return res.status(500).json({
+          error: 'database_error',
+          message: 'Failed to ban player',
+          requestId,
+        });
+      }
+
+      // Emit WebSocket event to notify all clients in the room
+      wsManager.broadcastToRoom(gameId, 'game:player-kicked', {
+        player_id: playerId,
+        player_name: player.player_name,
+        game_id: gameId,
+        kicked_by: userId || 'unknown',
+        timestamp: new Date().toISOString(),
+      });
+
+      logger.info(
+        { playerId, playerName: player.player_name, gameId, kickedBy: userId },
+        'Player banned successfully',
+      );
+
+      return res.status(200).json({
+        message: 'Player banned successfully',
+        player_id: playerId,
+      });
+    } catch (error) {
+      logger.error({ error, gameId, playerId, requestId }, 'Unexpected error banning player');
+      return res.status(500).json({
+        error: 'server_error',
+        message: 'Internal server error',
+        requestId,
+      });
+    }
+  },
+);
 
 export default router;
