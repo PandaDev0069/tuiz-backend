@@ -3,6 +3,7 @@ import type { Request, Response } from 'express';
 
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
+import { wsManager } from '../server';
 import { gameFlowService } from '../services/gameFlowService';
 import type { AuthenticatedRequest } from '../types/auth';
 import { logger } from '../utils/logger';
@@ -12,6 +13,7 @@ const router = Router();
 /**
  * POST /games/:gameId/start
  * Start a game - moves status from WAITING to ACTIVE
+ * Initializes game flow with first question and prepares for game loop
  */
 router.post('/:gameId/start', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -41,12 +43,74 @@ router.post('/:gameId/start', authMiddleware, async (req: AuthenticatedRequest, 
       });
     }
 
-    // Update game status to active
+    // Get game flow to access quiz_set_id
+    const flowResult = await gameFlowService.getGameFlow(gameId);
+    if (!flowResult.success || !flowResult.gameFlow) {
+      logger.error({ gameId, error: flowResult.error }, 'Failed to fetch game flow');
+      return res.status(500).json({
+        error: 'flow_not_found',
+        message: 'Game flow not found. Cannot initialize game.',
+      });
+    }
+
+    const gameFlow = flowResult.gameFlow;
+
+    // Fetch all questions from the quiz set, ordered by order_index
+    // Filter out deleted questions
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from('questions')
+      .select('id, order_index')
+      .eq('question_set_id', gameFlow.quiz_set_id)
+      .is('deleted_at', null)
+      .order('order_index', { ascending: true });
+
+    if (questionsError) {
+      logger.error(
+        { error: questionsError, gameId, quizSetId: gameFlow.quiz_set_id },
+        'Failed to fetch questions',
+      );
+      return res.status(500).json({
+        error: 'questions_fetch_failed',
+        message: 'Failed to fetch questions for quiz',
+      });
+    }
+
+    if (!questions || questions.length === 0) {
+      logger.warn({ gameId, quizSetId: gameFlow.quiz_set_id }, 'No questions found in quiz set');
+      return res.status(400).json({
+        error: 'no_questions',
+        message: 'Quiz set has no questions. Cannot start game.',
+      });
+    }
+
+    // Initialize question tracking
+    const firstQuestion = questions[0];
+    const secondQuestion = questions.length > 1 ? questions[1] : null;
+
+    // Update game flow with first question
+    const flowUpdateResult = await gameFlowService.updateGameFlow(gameId, {
+      current_question_id: firstQuestion.id,
+      current_question_index: 0,
+      next_question_id: secondQuestion?.id || null,
+      current_question_start_time: null, // Will be set when question actually starts
+      current_question_end_time: null,
+    });
+
+    if (!flowUpdateResult.success) {
+      logger.error({ gameId, error: flowUpdateResult.error }, 'Failed to update game flow');
+      return res.status(500).json({
+        error: 'flow_update_failed',
+        message: 'Failed to initialize game flow',
+      });
+    }
+
+    // Update game status to active and set current_question_index
     const { data: updatedGame, error: updateError } = await supabaseAdmin
       .from('games')
       .update({
         status: 'active',
         started_at: new Date().toISOString(),
+        current_question_index: 0,
       })
       .eq('id', gameId)
       .select()
@@ -60,9 +124,28 @@ router.post('/:gameId/start', authMiddleware, async (req: AuthenticatedRequest, 
       });
     }
 
-    logger.info({ gameId, userId }, 'Game started successfully');
-    return res.status(200).json(updatedGame);
-  } catch {
+    logger.info(
+      {
+        gameId,
+        userId,
+        firstQuestionId: firstQuestion.id,
+        nextQuestionId: secondQuestion?.id || null,
+        totalQuestions: questions.length,
+      },
+      'Game started successfully with question initialization',
+    );
+
+    return res.status(200).json({
+      ...updatedGame,
+      gameFlow: flowUpdateResult.gameFlow,
+      initializedQuestions: {
+        current: firstQuestion.id,
+        next: secondQuestion?.id || null,
+        total: questions.length,
+      },
+    });
+  } catch (error) {
+    logger.error({ error, gameId: req.params.gameId }, 'Unexpected error starting game');
     return res.status(500).json({
       error: 'server_error',
       message: 'Failed to start game',
@@ -105,11 +188,33 @@ router.post(
         });
       }
 
-      // Update game flow
+      // Fetch question to get duration
+      const { data: question, error: questionError } = await supabaseAdmin
+        .from('questions')
+        .select('show_question_time')
+        .eq('id', questionId)
+        .single();
+
+      if (questionError || !question) {
+        logger.error({ error: questionError, questionId }, 'Failed to fetch question for duration');
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Question not found',
+        });
+      }
+
+      // Calculate server timestamps
+      const serverTime = new Date();
+      const startTime = serverTime.toISOString();
+      const durationMs = (question.show_question_time || 30) * 1000; // Convert seconds to ms
+      const endTime = new Date(serverTime.getTime() + durationMs).toISOString();
+
+      // Update game flow with server timestamp
       const result = await gameFlowService.updateGameFlow(gameId, {
         current_question_id: questionId,
         current_question_index: questionIndex !== undefined ? questionIndex : undefined,
-        current_question_start_time: new Date().toISOString(),
+        current_question_start_time: startTime,
+        current_question_end_time: endTime,
       });
 
       if (!result.success) {
@@ -127,8 +232,35 @@ router.post(
         })
         .eq('id', gameId);
 
-      logger.info({ gameId, questionId, questionIndex }, 'Question started');
-      return res.status(200).json(result.gameFlow);
+      // Emit WebSocket event with server timestamps
+      const startsAt = serverTime.getTime();
+      const endsAt = serverTime.getTime() + durationMs;
+      wsManager.broadcastToRoom(gameId, 'game:question:started', {
+        roomId: gameId,
+        question: { id: questionId, index: questionIndex },
+        startsAt,
+        endsAt,
+      });
+
+      logger.info(
+        {
+          gameId,
+          questionId,
+          questionIndex,
+          startsAt,
+          endsAt,
+          durationMs,
+        },
+        'Question started with server timestamps',
+      );
+
+      return res.status(200).json({
+        ...result.gameFlow,
+        server_time: startTime,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        duration_ms: durationMs,
+      });
     } catch {
       return res.status(500).json({
         error: 'server_error',
@@ -186,6 +318,161 @@ router.post(
       return res.status(500).json({
         error: 'server_error',
         message: 'Failed to trigger answer reveal',
+      });
+    }
+  },
+);
+
+/**
+ * POST /games/:gameId/questions/next
+ * Advance to the next question (updates game_flows with next question info)
+ */
+router.post(
+  '/:gameId/questions/next',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { gameId } = req.params;
+      const userId = req.user?.id;
+
+      // Verify game ownership
+      const { data: game, error: gameError } = await supabaseAdmin
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .eq('user_id', userId)
+        .single();
+
+      if (gameError || !game) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game not found or unauthorized',
+        });
+      }
+
+      // Get current game flow
+      const flowResult = await gameFlowService.getGameFlow(gameId);
+      if (!flowResult.success || !flowResult.gameFlow) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game flow not found',
+        });
+      }
+
+      const gameFlow = flowResult.gameFlow;
+      const currentIndex = gameFlow.current_question_index ?? 0;
+
+      // Fetch all questions to get the next one
+      const { data: questions, error: questionsError } = await supabaseAdmin
+        .from('questions')
+        .select('id, order_index')
+        .eq('question_set_id', gameFlow.quiz_set_id)
+        .is('deleted_at', null)
+        .order('order_index', { ascending: true });
+
+      if (questionsError || !questions) {
+        logger.error({ error: questionsError, gameId }, 'Failed to fetch questions');
+        return res.status(500).json({
+          error: 'questions_fetch_failed',
+          message: 'Failed to fetch questions',
+        });
+      }
+
+      const nextIndex = currentIndex + 1;
+      // Safe: nextIndex is validated against questions.length before use
+      // eslint-disable-next-line security/detect-object-injection
+      const nextQuestion = questions[nextIndex];
+      const questionAfterNext = questions[nextIndex + 1] || null;
+
+      if (!nextQuestion) {
+        // No more questions - game is complete
+        const endResult = await gameFlowService.updateGameFlow(gameId, {
+          current_question_id: null,
+          next_question_id: null,
+          current_question_start_time: null,
+          current_question_end_time: null,
+        });
+
+        // Update game status to finished
+        await supabaseAdmin
+          .from('games')
+          .update({
+            status: 'finished',
+            ended_at: new Date().toISOString(),
+          })
+          .eq('id', gameId);
+
+        // Emit game end event via phase change
+        wsManager.broadcastToRoom(gameId, 'game:phase:change', {
+          roomId: gameId,
+          phase: 'ended',
+        });
+
+        logger.info({ gameId }, 'Game completed - no more questions');
+        return res.status(200).json({
+          message: 'Game completed',
+          gameFlow: endResult.gameFlow,
+          isComplete: true,
+        });
+      }
+
+      // Update game flow with next question info (but don't start it yet)
+      const updateResult = await gameFlowService.updateGameFlow(gameId, {
+        current_question_id: nextQuestion.id,
+        current_question_index: nextIndex,
+        next_question_id: questionAfterNext?.id || null,
+        current_question_start_time: null, // Will be set when question actually starts
+        current_question_end_time: null,
+      });
+
+      if (!updateResult.success) {
+        return res.status(500).json({
+          error: 'update_failed',
+          message: updateResult.error,
+        });
+      }
+
+      // Update games table
+      await supabaseAdmin
+        .from('games')
+        .update({
+          current_question_index: nextIndex,
+        })
+        .eq('id', gameId);
+
+      // Emit phase change to countdown
+      wsManager.broadcastToRoom(gameId, 'game:phase:change', {
+        roomId: gameId,
+        phase: 'countdown',
+      });
+
+      logger.info(
+        {
+          gameId,
+          nextQuestionId: nextQuestion.id,
+          nextIndex,
+          totalQuestions: questions.length,
+        },
+        'Advanced to next question',
+      );
+
+      return res.status(200).json({
+        message: 'Advanced to next question',
+        gameFlow: updateResult.gameFlow,
+        nextQuestion: {
+          id: nextQuestion.id,
+          index: nextIndex,
+        },
+        isComplete: false,
+      });
+    } catch (error) {
+      logger.error(
+        { error, gameId: req.params.gameId },
+        'Unexpected error advancing to next question',
+      );
+      return res.status(500).json({
+        error: 'server_error',
+        message: 'Failed to advance to next question',
       });
     }
   },
@@ -315,6 +602,122 @@ router.get('/:gameId/state', async (req: Request, res: Response) => {
     return res.status(500).json({
       error: 'server_error',
       message: 'Failed to get game state',
+    });
+  }
+});
+
+/**
+ * GET /games/:gameId/questions/current
+ * Get current question with full metadata (images, answers, etc.)
+ * Public endpoint - accessible by all players
+ */
+router.get('/:gameId/questions/current', async (req: Request, res: Response) => {
+  try {
+    const { gameId } = req.params;
+
+    // Get game flow to find current question
+    const flowResult = await gameFlowService.getGameFlow(gameId);
+
+    if (!flowResult.success || !flowResult.gameFlow) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Game flow not found',
+      });
+    }
+
+    const gameFlow = flowResult.gameFlow;
+
+    if (!gameFlow.current_question_id) {
+      return res.status(404).json({
+        error: 'no_question',
+        message: 'No current question active',
+      });
+    }
+
+    // Fetch question with answers
+    const { data: question, error: questionError } = await supabaseAdmin
+      .from('questions')
+      .select('*')
+      .eq('id', gameFlow.current_question_id)
+      .is('deleted_at', null)
+      .single();
+
+    if (questionError || !question) {
+      logger.error(
+        { error: questionError, questionId: gameFlow.current_question_id },
+        'Failed to fetch question',
+      );
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Question not found',
+      });
+    }
+
+    // Fetch answers for this question
+    const { data: answers, error: answersError } = await supabaseAdmin
+      .from('answers')
+      .select('*')
+      .eq('question_id', question.id)
+      .order('order_index', { ascending: true });
+
+    if (answersError) {
+      logger.error({ error: answersError, questionId: question.id }, 'Failed to fetch answers');
+      return res.status(500).json({
+        error: 'database_error',
+        message: 'Failed to fetch answers',
+      });
+    }
+
+    // Calculate server time and remaining time
+    const serverTime = new Date().toISOString();
+    let remainingMs = 0;
+    let isActive = false;
+
+    if (gameFlow.current_question_start_time) {
+      const startTime = new Date(gameFlow.current_question_start_time).getTime();
+      const now = Date.now();
+      const durationMs = question.show_question_time * 1000; // Convert seconds to ms
+      const elapsed = now - startTime;
+      remainingMs = Math.max(0, durationMs - elapsed);
+      isActive = remainingMs > 0;
+    }
+
+    return res.status(200).json({
+      question: {
+        id: question.id,
+        text: question.question_text,
+        image_url: question.image_url,
+        type: question.question_type,
+        time_limit: question.show_question_time,
+        points: question.points,
+        difficulty: question.difficulty,
+        explanation_title: question.explanation_title,
+        explanation_text: question.explanation_text,
+        explanation_image_url: question.explanation_image_url,
+        show_explanation_time: question.show_explanation_time,
+      },
+      answers: (answers || []).map((answer) => ({
+        id: answer.id,
+        text: answer.answer_text,
+        image_url: answer.image_url,
+        is_correct: answer.is_correct,
+        order_index: answer.order_index,
+      })),
+      question_index: gameFlow.current_question_index,
+      total_questions: gameFlow.total_questions,
+      server_time: serverTime,
+      start_time: gameFlow.current_question_start_time,
+      remaining_ms: remainingMs,
+      is_active: isActive,
+    });
+  } catch (error) {
+    logger.error(
+      { error, gameId: req.params.gameId },
+      'Unexpected error fetching current question',
+    );
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Failed to get current question',
     });
   }
 });
