@@ -64,6 +64,11 @@ export class WebSocketManager {
       this.handleRoomMessage(socket, data.roomId, data.message);
     });
 
+    // Game lifecycle events
+    socket.on('game:started', (data) => {
+      this.handleGameStarted(socket, data.roomId ?? data.gameId ?? '', data.roomCode);
+    });
+
     // Game events
     socket.on('game:action', (data) => {
       this.handleGameAction(socket, data.roomId, data.action, data.payload);
@@ -191,22 +196,56 @@ export class WebSocketManager {
       return;
     }
 
-    // Add to Socket.IO room
-    socket.join(roomId);
-
-    // Track in store
-    this.store.addToRoom(socket.id, roomId);
-
+    // Check if already in room before joining
     const room = this.store.getRoom(roomId);
-    const clientCount = room ? room.clients.size : 0;
+    const wasAlreadyInRoom = room?.clients.has(socket.id) || false;
+
+    // Add to Socket.IO room (idempotent, but we check our store first)
+    if (!wasAlreadyInRoom) {
+      socket.join(roomId);
+    }
+
+    // Track in store (returns false if already in room)
+    const added = this.store.addToRoom(socket.id, roomId);
+
+    // If already in room, just emit confirmation without notifying others
+    if (!added || wasAlreadyInRoom) {
+      const currentRoom = this.store.getRoom(roomId);
+      const clientCount = currentRoom ? currentRoom.clients.size : 0;
+      socket.emit('room:joined', { roomId, clients: clientCount });
+      logger.debug(`Socket ${socket.id} already in room ${roomId} (${clientCount} clients)`);
+      return;
+    }
+
+    const updatedRoom = this.store.getRoom(roomId);
+    const clientCount = updatedRoom ? updatedRoom.clients.size : 0;
 
     socket.emit('room:joined', { roomId, clients: clientCount });
 
-    // Notify others in the room
+    // Notify others in the room (only if this was a new join)
     socket.to(roomId).emit('room:user-joined', {
       roomId,
       socketId: socket.id,
     });
+
+    // Send current phase to new joiner if game has started (for late joiners)
+    if (room) {
+      const currentPhase = room.gameData?.currentPhase as string | undefined;
+      if (currentPhase) {
+        const phaseData: { roomId: string; phase: string; startedAt?: number } = {
+          roomId,
+          phase: currentPhase,
+        };
+
+        // If countdown is active, send the start timestamp so client can sync
+        if (currentPhase === 'countdown' && room.gameData?.countdownStartedAt) {
+          phaseData.startedAt = room.gameData.countdownStartedAt as number;
+        }
+
+        socket.emit('game:phase:change', phaseData);
+        logger.debug(`Sent current phase ${currentPhase} to new joiner ${socket.id}`);
+      }
+    }
 
     logger.info(`Socket ${socket.id} joined room ${roomId} (${clientCount} clients)`);
   }
@@ -377,8 +416,28 @@ export class WebSocketManager {
   }
 
   private handlePhaseChange(socket: TypedSocket, roomId: string, phase: string): void {
-    this.io.to(roomId).emit('game:phase:change', { roomId, phase });
+    // Store current phase in room state for late joiners
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    const gameData = room.gameData || {};
+    gameData.currentPhase = phase;
+
+    // If countdown phase, add server timestamp so all clients start at the same time
+    const phaseData: { roomId: string; phase: string; startedAt?: number } = { roomId, phase };
+    if (phase === 'countdown') {
+      phaseData.startedAt = Date.now();
+      gameData.countdownStartedAt = phaseData.startedAt;
+    }
+
+    room.gameData = gameData;
+
+    this.io.to(roomId).emit('game:phase:change', phaseData);
     logger.info(`Phase change in room ${roomId}: ${phase}`);
+  }
+
+  private handleGameStarted(socket: TypedSocket, roomId: string, roomCode?: string): void {
+    if (!roomId) return;
+    this.io.to(roomId).emit('game:started', { roomId, roomCode, gameId: roomId });
+    logger.info(`Game started broadcast to room ${roomId}`);
   }
 
   private handleAnswerSubmit(

@@ -99,6 +99,12 @@ export class ConnectionStore {
       room = this.createRoom(roomId);
     }
 
+    // Check if socket is already in the room to prevent duplicate joins
+    if (room.clients.has(socketId)) {
+      logger.debug(`Socket ${socketId} already in room ${roomId}, skipping duplicate join`);
+      return false;
+    }
+
     room.clients.add(socketId);
 
     // Track rooms per socket

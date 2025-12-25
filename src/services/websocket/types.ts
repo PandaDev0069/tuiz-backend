@@ -62,6 +62,9 @@ export interface WebSocketEvents {
   // Phase change broadcast
   'game:phase:change': (data: { roomId: string; phase: string }) => void;
 
+  // Game lifecycle
+  'game:started': (data: { roomId?: string; gameId?: string; roomCode?: string }) => void;
+
   // Answers
   'game:answer:submit': (data: {
     roomId: string;
@@ -119,6 +122,9 @@ export interface ServerEvents {
 
   // Phase change broadcast
   'game:phase:change': (data: { roomId: string; phase: string }) => void;
+
+  // Game lifecycle
+  'game:started': (data: { roomId?: string; gameId?: string; roomCode?: string }) => void;
 
   // Answer responses/broadcasts
   'game:answer:accepted': (data: {
