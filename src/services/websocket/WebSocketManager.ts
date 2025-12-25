@@ -7,6 +7,9 @@ import { ConnectionStore } from './ConnectionStore';
 import { ClientConnection, ConnectionInfo, WebSocketEvents, ServerEvents } from './types';
 import { WebSocketPersistence } from './WebSocketPersistence';
 
+// Lead time added to countdown start to absorb network jitter between clients.
+const COUNTDOWN_LEAD_MS = 700;
+
 type TypedSocket = Socket<WebSocketEvents, ServerEvents>;
 
 export class WebSocketManager {
@@ -421,11 +424,13 @@ export class WebSocketManager {
     const gameData = room.gameData || {};
     gameData.currentPhase = phase;
 
-    // If countdown phase, add server timestamp so all clients start at the same time
+    // If countdown phase, reuse existing server timestamp if available to keep all clients in sync
     const phaseData: { roomId: string; phase: string; startedAt?: number } = { roomId, phase };
     if (phase === 'countdown') {
-      phaseData.startedAt = Date.now();
-      gameData.countdownStartedAt = phaseData.startedAt;
+      const startedAt =
+        (gameData.countdownStartedAt as number | undefined) ?? Date.now() + COUNTDOWN_LEAD_MS;
+      gameData.countdownStartedAt = startedAt;
+      phaseData.startedAt = startedAt;
     }
 
     room.gameData = gameData;
@@ -436,7 +441,16 @@ export class WebSocketManager {
 
   private handleGameStarted(socket: TypedSocket, roomId: string, roomCode?: string): void {
     if (!roomId) return;
-    this.io.to(roomId).emit('game:started', { roomId, roomCode, gameId: roomId });
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    const gameData = room.gameData || {};
+    // Set countdown start timestamp once and reuse for all events
+    const startedAt =
+      (gameData.countdownStartedAt as number | undefined) ?? Date.now() + COUNTDOWN_LEAD_MS;
+    gameData.countdownStartedAt = startedAt;
+    gameData.currentPhase = gameData.currentPhase || 'countdown';
+    room.gameData = gameData;
+
+    this.io.to(roomId).emit('game:started', { roomId, roomCode, gameId: roomId, startedAt });
     logger.info(`Game started broadcast to room ${roomId}`);
   }
 
