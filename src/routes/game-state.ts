@@ -676,7 +676,7 @@ router.get('/:gameId/questions/current', async (req: Request, res: Response) => 
     if (gameFlow.current_question_start_time) {
       const startTime = new Date(gameFlow.current_question_start_time).getTime();
       const now = Date.now();
-      const durationMs = question.show_question_time * 1000; // Convert seconds to ms
+      const durationMs = question.show_question_time * 1000; // question display duration
       const elapsed = now - startTime;
       remainingMs = Math.max(0, durationMs - elapsed);
       isActive = remainingMs > 0;
@@ -689,6 +689,7 @@ router.get('/:gameId/questions/current', async (req: Request, res: Response) => 
         image_url: question.image_url,
         type: question.question_type,
         time_limit: question.show_question_time,
+        answering_time: question.answering_time,
         points: question.points,
         difficulty: question.difficulty,
         explanation_title: question.explanation_title,

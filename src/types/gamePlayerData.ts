@@ -73,8 +73,10 @@ export const SubmitAnswerSchema = z.object({
   question_id: z.string().uuid('Invalid question ID'),
   question_number: z.number().int().min(1),
   answer_id: z.string().uuid('Invalid answer ID').nullable(),
-  is_correct: z.boolean(),
+  // Client-sent correctness is ignored; kept for backward compatibility
+  is_correct: z.boolean().optional(),
   time_taken: z.number().min(0, 'Time taken must be non-negative'),
+  // Client-sent points are ignored; backend will compute
   points_earned: z.number().int().min(0, 'Points must be non-negative').optional().default(0),
 });
 

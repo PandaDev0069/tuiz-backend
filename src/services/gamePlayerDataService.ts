@@ -171,6 +171,68 @@ export class GamePlayerDataService {
     answer: SubmitAnswerInput,
   ): Promise<GamePlayerDataUpdateResult> {
     try {
+      // Resolve game (for quiz/quiz_set) and validate existence
+      const { data: game, error: gameError } = await supabaseAdmin
+        .from('games')
+        .select('id, quiz_id, quiz_set_id, current_question_id, current_question_index')
+        .eq('id', gameId)
+        .single();
+
+      if (gameError || !game) {
+        logger.error({ error: gameError, gameId }, 'Game not found for answer submission');
+        return { success: false, error: 'Game not found' };
+      }
+
+      // Fetch question (points, answering_time)
+      const { data: question, error: questionError } = await supabaseAdmin
+        .from('questions')
+        .select('id, points, answering_time, question_text, quiz_id')
+        .eq('id', answer.question_id)
+        .single();
+
+      if (questionError || !question) {
+        logger.error(
+          { error: questionError, questionId: answer.question_id },
+          'Question not found',
+        );
+        return { success: false, error: 'Question not found' };
+      }
+
+      // Fetch quiz play settings (time_bonus, streak_bonus)
+      const quizId = game.quiz_set_id || game.quiz_id || question.quiz_id;
+      let playSettings: { time_bonus?: boolean; streak_bonus?: boolean } = {};
+      if (quizId) {
+        const { data: quiz, error: quizError } = await supabaseAdmin
+          .from('quiz_sets')
+          .select('play_settings')
+          .eq('id', quizId)
+          .maybeSingle();
+        if (!quizError && quiz?.play_settings) {
+          playSettings = quiz.play_settings as typeof playSettings;
+        }
+      }
+
+      // Fetch correct answer id
+      const { data: correctAnswer, error: correctAnswerError } = await supabaseAdmin
+        .from('answers')
+        .select('id')
+        .eq('question_id', question.id)
+        .eq('is_correct', true)
+        .single();
+
+      if (correctAnswerError || !correctAnswer) {
+        logger.error(
+          { error: correctAnswerError, questionId: question.id },
+          'Correct answer not found',
+        );
+        return { success: false, error: 'Correct answer not found' };
+      }
+
+      // Determine correctness and timing (authoritative)
+      const isCorrect = answer.answer_id === correctAnswer.id;
+      const timeTakenSeconds = Math.max(0, answer.time_taken);
+      const answeredInTime = timeTakenSeconds <= (question.answering_time || 30);
+
       // Get current game player data
       const { data: currentData, error: fetchError } = await this.client
         .from('game_player_data')
@@ -193,20 +255,62 @@ export class GamePlayerDataService {
       // Parse current answer report
       const answerReport: AnswerReport = currentData.answer_report as AnswerReport;
 
+      // Reject duplicate answer for same question
+      const alreadyAnswered =
+        answerReport.questions?.some((q) => q.question_id === answer.question_id) || false;
+      if (alreadyAnswered) {
+        return {
+          success: false,
+          error: 'Question already answered',
+        };
+      }
+
+      // Calculate streaks prior to this answer (current streak = trailing correct count)
+      const calcCurrentStreak = (questions: AnswerReport['questions'] = []) => {
+        let streak = 0;
+        const reversed = [...questions].reverse();
+        for (const q of reversed) {
+          if (q && q.is_correct) {
+            streak += 1;
+            continue;
+          }
+          break;
+        }
+        return streak;
+      };
+      const previousStreak = calcCurrentStreak(answerReport.questions);
+      const newStreak = isCorrect && answeredInTime ? previousStreak + 1 : 0;
+
+      // Compute points based on play settings
+      const basePoints = question.points || 0;
+      let computedPoints = 0;
+      if (isCorrect && answeredInTime) {
+        const timeBonusEnabled = !!playSettings.time_bonus;
+        const streakBonusEnabled = !!playSettings.streak_bonus;
+
+        const timeAdjusted = timeBonusEnabled
+          ? Math.max(0, basePoints - timeTakenSeconds * (question.answering_time || 30))
+          : basePoints;
+
+        const streakMultiplier = streakBonusEnabled ? 1 + Math.min(0.5, newStreak * 0.1) : 1;
+
+        computedPoints = Math.max(0, Math.round(timeAdjusted * streakMultiplier));
+      }
+
       // Update answer report
       const updatedReport: AnswerReport = {
         total_answers: answerReport.total_answers + 1,
-        correct_answers: answerReport.correct_answers + (answer.is_correct ? 1 : 0),
-        incorrect_answers: answerReport.incorrect_answers + (answer.is_correct ? 0 : 1),
+        correct_answers: answerReport.correct_answers + (isCorrect ? 1 : 0),
+        incorrect_answers: answerReport.incorrect_answers + (isCorrect ? 0 : 1),
         questions: [
           ...(answerReport.questions || []),
           {
             question_id: answer.question_id,
             question_number: answer.question_number,
             answer_id: answer.answer_id,
-            is_correct: answer.is_correct,
-            time_taken: answer.time_taken,
-            points_earned: answer.points_earned || 0,
+            is_correct: isCorrect,
+            time_taken: timeTakenSeconds,
+            points_earned: computedPoints,
             answered_at: new Date().toISOString(),
           },
         ],
@@ -214,28 +318,11 @@ export class GamePlayerDataService {
 
       // Calculate streaks
       const questions = updatedReport.questions;
-      let currentStreak = 0;
-      let maxStreak = 0;
-      let tempStreak = 0;
-
-      for (let i = questions.length - 1; i >= 0; i--) {
-        const question = questions[i as number];
-        if (question && question.is_correct) {
-          tempStreak++;
-          if (i === questions.length - 1) {
-            currentStreak = tempStreak;
-          }
-          maxStreak = Math.max(maxStreak, tempStreak);
-        } else {
-          if (i === questions.length - 1) {
-            currentStreak = 0;
-          }
-          tempStreak = 0;
-        }
-      }
+      const previousMaxStreak = answerReport.streaks?.max_streak || 0;
+      const maxStreak = Math.max(previousMaxStreak, newStreak);
 
       updatedReport.streaks = {
-        current_streak: currentStreak,
+        current_streak: newStreak,
         max_streak: maxStreak,
       };
 
@@ -249,7 +336,7 @@ export class GamePlayerDataService {
       };
 
       // Update score
-      const newScore = currentData.score + (answer.points_earned || 0);
+      const newScore = currentData.score + computedPoints;
 
       // Save updates
       const { data: updatedData, error: updateError } = await this.client
