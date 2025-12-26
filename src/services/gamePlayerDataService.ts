@@ -30,6 +30,7 @@ export interface GamePlayerDataUpdateResult {
   success: boolean;
   data?: GamePlayerData;
   error?: string;
+  answerStats?: Record<string, number>;
 }
 
 /**
@@ -358,6 +359,28 @@ export class GamePlayerDataService {
         };
       }
 
+      // Aggregate per-choice counts for this question across all players in the game
+      let answerStats: Record<string, number> = {};
+      const { data: allReports, error: reportsError } = await this.client
+        .from('game_player_data')
+        .select('answer_report')
+        .eq('game_id', gameId);
+
+      if (!reportsError && allReports) {
+        answerStats = (allReports as { answer_report: AnswerReport }[]).reduce(
+          (acc, row) => {
+            const report = row.answer_report as AnswerReport;
+            (report.questions || []).forEach((q) => {
+              if (q.question_id === answer.question_id && q.answer_id) {
+                acc[q.answer_id] = (acc[q.answer_id] || 0) + 1;
+              }
+            });
+            return acc;
+          },
+          {} as Record<string, number>,
+        );
+      }
+
       logger.info(
         {
           playerId,
@@ -372,6 +395,7 @@ export class GamePlayerDataService {
       return {
         success: true,
         data: updatedData,
+        answerStats,
       };
     } catch (err) {
       logger.error({ err, playerId, gameId }, 'Exception in submitAnswer');
