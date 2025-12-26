@@ -2,17 +2,16 @@
 import express from 'express';
 import { ZodError } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { wsManager } from '../server';
+import { gamePlayerDataService } from '../services/gamePlayerDataService';
+import { AuthenticatedRequest } from '../types/auth';
 import {
   CreateGamePlayerDataSchema,
   LeaderboardQuerySchema,
   SubmitAnswerSchema,
   UpdateGamePlayerDataSchema,
 } from '../types/gamePlayerData';
-import { wsManager } from '../server';
-import { gamePlayerDataService } from '../services/gamePlayerDataService';
-import { AuthenticatedRequest } from '../types/auth';
 import { logger } from '../utils/logger';
-import { wsManager } from '../server';
 
 const router = express.Router();
 
@@ -74,6 +73,11 @@ router.post('/:gameId/players/:playerId/data', async (req, res) => {
 router.post('/:gameId/players/:playerId/answer', async (req, res) => {
   const requestId = req.headers['x-request-id'] as string;
   const { gameId, playerId } = req.params;
+  const broadcast = wsManager.broadcastToRoom as (
+    roomId: string,
+    event: string,
+    payload: unknown,
+  ) => void;
 
   try {
     // Validate input
@@ -93,7 +97,13 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
 
     // Broadcast per-choice counts for this question (best-effort)
     if (result.answerStats) {
-      wsManager.broadcastToRoom(gameId, 'game:answer:stats', {
+      broadcast(gameId, 'game:answer:stats', {
+        roomId: gameId,
+        questionId: answer.question_id,
+        counts: result.answerStats,
+      });
+      // Also emit locked event to trigger reveal transition
+      broadcast(gameId, 'game:answer:locked', {
         roomId: gameId,
         questionId: answer.question_id,
         counts: result.answerStats,
