@@ -191,7 +191,7 @@ router.post(
       // Fetch question to get duration
       const { data: question, error: questionError } = await supabaseAdmin
         .from('questions')
-        .select('show_question_time')
+        .select('show_question_time, answering_time')
         .eq('id', questionId)
         .single();
 
@@ -206,7 +206,11 @@ router.post(
       // Calculate server timestamps
       const serverTime = new Date();
       const startTime = serverTime.toISOString();
-      const durationMs = (question.show_question_time || 30) * 1000; // Convert seconds to ms
+      // Total duration is show_question_time (viewing) + answering_time (answering)
+      const showTime = question.show_question_time || 10;
+      const answeringTime = question.answering_time || 30;
+      const totalDurationSeconds = showTime + answeringTime;
+      const durationMs = totalDurationSeconds * 1000;
       const endTime = new Date(serverTime.getTime() + durationMs).toISOString();
 
       // Update game flow with server timestamp
@@ -676,9 +680,10 @@ router.get('/:gameId/questions/current', async (req: Request, res: Response) => 
     if (gameFlow.current_question_start_time) {
       const startTime = new Date(gameFlow.current_question_start_time).getTime();
       const now = Date.now();
-      const durationMs = question.show_question_time * 1000; // question display duration
+      // Total duration is show_question_time + answering_time
+      const totalDurationMs = (question.show_question_time + question.answering_time) * 1000;
       const elapsed = now - startTime;
-      remainingMs = Math.max(0, durationMs - elapsed);
+      remainingMs = Math.max(0, totalDurationMs - elapsed);
       isActive = remainingMs > 0;
     }
 

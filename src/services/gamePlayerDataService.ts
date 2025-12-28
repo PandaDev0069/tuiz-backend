@@ -175,7 +175,7 @@ export class GamePlayerDataService {
       // Resolve game (for quiz/quiz_set) and validate existence
       const { data: game, error: gameError } = await supabaseAdmin
         .from('games')
-        .select('id, quiz_id, quiz_set_id, current_question_id, current_question_index')
+        .select('id, quiz_set_id')
         .eq('id', gameId)
         .single();
 
@@ -187,7 +187,7 @@ export class GamePlayerDataService {
       // Fetch question (points, answering_time)
       const { data: question, error: questionError } = await supabaseAdmin
         .from('questions')
-        .select('id, points, answering_time, question_text, quiz_id')
+        .select('id, points, answering_time, question_text')
         .eq('id', answer.question_id)
         .single();
 
@@ -200,7 +200,8 @@ export class GamePlayerDataService {
       }
 
       // Fetch quiz play settings (time_bonus, streak_bonus)
-      const quizId = game.quiz_set_id || game.quiz_id || question.quiz_id;
+      // Use quiz_set_id from game (questions don't have quiz_id column)
+      const quizId = game.quiz_set_id;
       let playSettings: { time_bonus?: boolean; streak_bonus?: boolean } = {};
       if (quizId) {
         const { data: quiz, error: quizError } = await supabaseAdmin
@@ -232,7 +233,19 @@ export class GamePlayerDataService {
       // Determine correctness and timing (authoritative)
       const isCorrect = answer.answer_id === correctAnswer.id;
       const timeTakenSeconds = Math.max(0, answer.time_taken);
-      const answeredInTime = timeTakenSeconds <= (question.answering_time || 30);
+      const answeringTime = question.answering_time || 30;
+
+      // Point calculation strict check (points only if <= answering_time)
+      const answeredInTime = timeTakenSeconds <= answeringTime;
+
+      // Validation tolerance (reject if significantly late, e.g. > 10% late)
+      const maxSubmissionTime = answeringTime * 1.1;
+      if (timeTakenSeconds > maxSubmissionTime) {
+        logger.warn(
+          { timeTaken: timeTakenSeconds, answeringTime, gameId, playerId },
+          'Answer submission significantly late, may be ignored or capped',
+        );
+      }
 
       // Get current game player data
       const { data: currentData, error: fetchError } = await this.client
@@ -283,16 +296,21 @@ export class GamePlayerDataService {
       const newStreak = isCorrect && answeredInTime ? previousStreak + 1 : 0;
 
       // Compute points based on play settings
-      const basePoints = question.points || 0;
+      const basePoints = question.points || 100;
       let computedPoints = 0;
       if (isCorrect && answeredInTime) {
         const timeBonusEnabled = !!playSettings.time_bonus;
         const streakBonusEnabled = !!playSettings.streak_bonus;
 
-        const timeAdjusted = timeBonusEnabled
-          ? Math.max(0, basePoints - timeTakenSeconds * (question.answering_time || 30))
-          : basePoints;
+        // Formula: points = basePoints - (timeTaken * (basePoints / answeringTime))
+        let timeAdjusted = basePoints;
+        if (timeBonusEnabled) {
+          const timePenaltyFactor = basePoints / answeringTime;
+          const timePenalty = Math.min(timeTakenSeconds * timePenaltyFactor, basePoints);
+          timeAdjusted = Math.max(0, basePoints - timePenalty);
+        }
 
+        // Streak multiplier: 0.1 per streak, max 0.5 bonus (1.5x)
         const streakMultiplier = streakBonusEnabled ? 1 + Math.min(0.5, newStreak * 0.1) : 1;
 
         computedPoints = Math.max(0, Math.round(timeAdjusted * streakMultiplier));

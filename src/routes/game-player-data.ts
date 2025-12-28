@@ -96,20 +96,25 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
     }
 
     // Broadcast per-choice counts for this question (best-effort)
+    // Wrap in try-catch to prevent broadcast errors from affecting the response
     if (result.answerStats) {
-      broadcast(gameId, 'game:answer:stats', {
-        roomId: gameId,
-        questionId: answer.question_id,
-        counts: result.answerStats,
-      });
-      // Also emit locked event to trigger reveal transition
-      broadcast(gameId, 'game:answer:locked', {
-        roomId: gameId,
-        questionId: answer.question_id,
-        counts: result.answerStats,
-      });
+      try {
+        broadcast(gameId, 'game:answer:stats', {
+          roomId: gameId,
+          questionId: answer.question_id,
+          counts: result.answerStats,
+        });
+      } catch (broadcastError) {
+        // Log but don't fail the request - answer was already submitted successfully
+        logger.warn(
+          { error: broadcastError, gameId, playerId, questionId: answer.question_id },
+          'Failed to broadcast answer stats (answer was still submitted successfully)',
+        );
+      }
     }
 
+    // Return response - answer was submitted successfully
+    // Note: result.data is the updated game_player_data row from Supabase
     return res.status(200).json({
       ...result.data,
       answer_stats: result.answerStats,
@@ -125,7 +130,16 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
       });
     }
 
-    logger.error({ error, gameId, playerId, requestId }, 'Error submitting answer');
+    // Log error with more details
+    const errorDetails = {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : typeof error,
+      gameId,
+      playerId,
+      requestId,
+    };
+    logger.error(errorDetails, 'Error submitting answer');
     return res.status(500).json({
       error: 'server_error',
       message: 'Failed to submit answer',
