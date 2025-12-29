@@ -60,7 +60,7 @@ export interface WebSocketEvents {
   'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
 
   // Phase change broadcast
-  'game:phase:change': (data: { roomId: string; phase: string }) => void;
+  'game:phase:change': (data: { roomId: string; phase: string; startedAt?: number }) => void;
 
   // Game lifecycle
   'game:started': (data: {
@@ -126,7 +126,7 @@ export interface ServerEvents {
   'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
 
   // Phase change broadcast
-  'game:phase:change': (data: { roomId: string; phase: string }) => void;
+  'game:phase:change': (data: { roomId: string; phase: string; startedAt?: number }) => void;
 
   // Game lifecycle
   'game:started': (data: {

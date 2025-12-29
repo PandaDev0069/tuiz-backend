@@ -481,7 +481,7 @@ router.post(
           current_question_end_time: null,
         });
 
-        // Update game status to finished
+        // Update game status to finished (using enum value)
         await supabaseAdmin
           .from('games')
           .update({
@@ -491,10 +491,7 @@ router.post(
           .eq('id', gameId);
 
         // Emit game end event via phase change
-        wsManager.broadcastToRoom(gameId, 'game:phase:change', {
-          roomId: gameId,
-          phase: 'ended',
-        });
+        wsManager.broadcastPhaseChange(gameId, 'ended');
 
         logger.info({ gameId }, 'Game completed - no more questions');
         return res.status(200).json({
@@ -528,11 +525,8 @@ router.post(
         })
         .eq('id', gameId);
 
-      // Emit phase change to countdown
-      wsManager.broadcastToRoom(gameId, 'game:phase:change', {
-        roomId: gameId,
-        phase: 'countdown',
-      });
+      // Emit phase change to countdown (with proper startedAt handling)
+      wsManager.broadcastPhaseChange(gameId, 'countdown');
 
       logger.info(
         {
@@ -612,13 +606,13 @@ router.patch(
         updateData.status = 'active';
         updateData.resumed_at = new Date().toISOString();
       } else if (action === 'end') {
-        updateData.status = 'completed';
+        updateData.status = 'finished';
         updateData.ended_at = new Date().toISOString();
       } else if (status) {
         // Direct status update
         updateData.status = status;
 
-        if (status === 'completed' && !game.ended_at) {
+        if (status === 'finished' && !game.ended_at) {
           updateData.ended_at = new Date().toISOString();
         }
       }

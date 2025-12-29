@@ -555,6 +555,28 @@ export class WebSocketManager {
     this.io.to(roomId).emit(event, ...args);
   }
 
+  /**
+   * Broadcast phase change with proper handling (adds startedAt for countdown)
+   */
+  public broadcastPhaseChange(roomId: string, phase: string): void {
+    const room = this.store.getRoom(roomId) || this.store.createRoom(roomId);
+    const gameData = room.gameData || {};
+    gameData.currentPhase = phase;
+
+    // If countdown phase, reuse existing server timestamp if available to keep all clients in sync
+    const phaseData: { roomId: string; phase: string; startedAt?: number } = { roomId, phase };
+    if (phase === 'countdown') {
+      const startedAt =
+        (gameData.countdownStartedAt as number | undefined) ?? Date.now() + COUNTDOWN_LEAD_MS;
+      gameData.countdownStartedAt = startedAt;
+      phaseData.startedAt = startedAt;
+    }
+
+    room.gameData = gameData;
+    this.io.to(roomId).emit('game:phase:change', phaseData);
+    logger.info(`Phase change broadcast in room ${roomId}: ${phase}`);
+  }
+
   public shutdown(): void {
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
