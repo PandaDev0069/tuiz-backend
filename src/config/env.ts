@@ -63,5 +63,24 @@ export function getAllowedOrigins(): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 
+  // In development, allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  if (!isProd) {
+    // Allow localhost and common local network patterns
+    const localNetworkPatterns = [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/, // 192.168.x.x:3000
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:3000$/, // 10.x.x.x:3000
+      /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:3000$/, // 172.16-31.x.x:3000
+    ];
+
+    // Add local network patterns if not already in allowed list
+    localNetworkPatterns.forEach((pattern) => {
+      if (typeof pattern === 'string' && !allowed.includes(pattern)) {
+        allowed.push(pattern);
+      }
+    });
+  }
+
   return allowed;
 }
