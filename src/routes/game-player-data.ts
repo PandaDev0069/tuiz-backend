@@ -99,7 +99,13 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
     // Wrap in try-catch to prevent broadcast errors from affecting the response
     if (result.answerStats) {
       try {
+        // Emit both event names for compatibility (frontend listens to both)
         broadcast(gameId, 'game:answer:stats', {
+          roomId: gameId,
+          questionId: answer.question_id,
+          counts: result.answerStats,
+        });
+        broadcast(gameId, 'game:answer:stats:update', {
           roomId: gameId,
           questionId: answer.question_id,
           counts: result.answerStats,

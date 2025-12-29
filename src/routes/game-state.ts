@@ -301,7 +301,26 @@ router.post(
         });
       }
 
-      // Update game flow with end time
+      // Get current game flow to get question ID
+      const flowResult = await gameFlowService.getGameFlow(gameId);
+      if (!flowResult.success || !flowResult.gameFlow) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game flow not found',
+        });
+      }
+
+      const gameFlow = flowResult.gameFlow;
+      const currentQuestionId = gameFlow.current_question_id;
+
+      if (!currentQuestionId) {
+        return res.status(400).json({
+          error: 'invalid_state',
+          message: 'No active question to reveal',
+        });
+      }
+
+      // Update game flow with end time (locks answer submissions)
       const result = await gameFlowService.updateGameFlow(gameId, {
         current_question_end_time: new Date().toISOString(),
       });
@@ -313,10 +332,75 @@ router.post(
         });
       }
 
-      logger.info({ gameId }, 'Answer reveal triggered');
+      // Calculate final answer statistics for this question
+      let answerStats: Record<string, number> = {};
+      try {
+        const { data: allReports, error: reportsError } = await supabaseAdmin
+          .from('game_player_data')
+          .select('answer_report')
+          .eq('game_id', gameId);
+
+        if (!reportsError && allReports) {
+          answerStats = (allReports as { answer_report: unknown }[]).reduce(
+            (acc, row) => {
+              const report = row.answer_report as {
+                questions?: Array<{ question_id: string; answer_id: string | null }>;
+              };
+              (report?.questions || []).forEach((q) => {
+                if (q.question_id === currentQuestionId && q.answer_id) {
+                  acc[q.answer_id] = (acc[q.answer_id] || 0) + 1;
+                }
+              });
+              return acc;
+            },
+            {} as Record<string, number>,
+          );
+        }
+      } catch (statsError) {
+        logger.warn(
+          { error: statsError, gameId, questionId: currentQuestionId },
+          'Failed to calculate answer statistics',
+        );
+        // Continue even if stats calculation fails
+      }
+
+      // Emit WebSocket events
+      try {
+        // Emit question ended event
+        wsManager.broadcastToRoom(gameId, 'game:question:ended', {
+          roomId: gameId,
+          questionId: currentQuestionId,
+        });
+
+        // Emit answer locked event with final statistics
+        wsManager.broadcastToRoom(gameId, 'game:answer:locked', {
+          roomId: gameId,
+          questionId: currentQuestionId,
+          counts: answerStats,
+        });
+
+        // Emit final answer stats update
+        wsManager.broadcastToRoom(gameId, 'game:answer:stats:update', {
+          roomId: gameId,
+          questionId: currentQuestionId,
+          counts: answerStats,
+        });
+      } catch (wsError) {
+        logger.warn(
+          { error: wsError, gameId },
+          'Failed to emit WebSocket events (answer was still revealed)',
+        );
+        // Continue even if WebSocket emission fails
+      }
+
+      logger.info(
+        { gameId, questionId: currentQuestionId, answerStats },
+        'Answer reveal triggered',
+      );
       return res.status(200).json({
         message: 'Answer reveal triggered',
         gameFlow: result.gameFlow,
+        answerStats,
       });
     } catch {
       return res.status(500).json({

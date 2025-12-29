@@ -143,10 +143,20 @@ export interface ServerEvents {
     questionId: string;
     submittedAt: string;
   }) => void;
+  'game:answer:stats': (data: {
+    roomId: string;
+    questionId: string;
+    counts: Record<string, number>;
+  }) => void;
   'game:answer:stats:update': (data: {
     roomId: string;
     questionId: string;
     counts: Record<string, number>;
+  }) => void;
+  'game:answer:locked': (data: {
+    roomId: string;
+    questionId: string;
+    counts?: Record<string, number>;
   }) => void;
 
   // Leaderboard

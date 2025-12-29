@@ -279,6 +279,33 @@ export class GamePlayerDataService {
         };
       }
 
+      // Check if question has ended (answer reveal triggered)
+      // Import gameFlowService dynamically to avoid circular dependency
+      const { gameFlowService } = await import('../services/gameFlowService');
+      const flowResult = await gameFlowService.getGameFlow(gameId);
+      if (flowResult.success && flowResult.gameFlow) {
+        const gameFlow = flowResult.gameFlow;
+        // Check if this is the current question and if it has ended
+        if (
+          gameFlow.current_question_id === answer.question_id &&
+          gameFlow.current_question_end_time
+        ) {
+          const endTime = new Date(gameFlow.current_question_end_time).getTime();
+          const now = Date.now();
+          // Allow a small grace period (1 second) for submissions in flight
+          if (now > endTime + 1000) {
+            logger.warn(
+              { gameId, playerId, questionId: answer.question_id, endTime, now },
+              'Answer submission rejected: question has ended',
+            );
+            return {
+              success: false,
+              error: 'Question has ended. Answers are locked.',
+            };
+          }
+        }
+      }
+
       // Calculate streaks prior to this answer (current streak = trailing correct count)
       const calcCurrentStreak = (questions: AnswerReport['questions'] = []) => {
         let streak = 0;
