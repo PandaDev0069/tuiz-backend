@@ -248,14 +248,67 @@ export class GamePlayerDataService {
       }
 
       // Get current game player data
-      const { data: currentData, error: fetchError } = await this.client
+      const { data: initialData, error: fetchError } = await this.client
         .from('game_player_data')
         .select('*')
         .eq('player_id', playerId)
         .eq('game_id', gameId)
         .single();
 
-      if (fetchError || !currentData) {
+      let currentData = initialData;
+
+      // If player data doesn't exist, create it automatically
+      if (fetchError && fetchError.code === 'PGRST116') {
+        logger.warn({ playerId, gameId }, 'Game player data not found, creating it automatically');
+
+        // Fetch player to get device_id
+        const { data: player, error: playerError } = await this.client
+          .from('players')
+          .select('device_id')
+          .eq('id', playerId)
+          .eq('game_id', gameId)
+          .single();
+
+        if (playerError || !player) {
+          logger.error(
+            { error: playerError, playerId, gameId },
+            'Player not found when trying to create game player data',
+          );
+          return {
+            success: false,
+            error: 'Player not found',
+          };
+        }
+
+        // Create game player data
+        const createResult = await this.createGamePlayerData({
+          player_id: playerId,
+          game_id: gameId,
+          player_device_id: player.device_id,
+          score: 0,
+          answer_report: {
+            total_answers: 0,
+            correct_answers: 0,
+            incorrect_answers: 0,
+            questions: [],
+          },
+        });
+
+        if (!createResult.success) {
+          logger.error(
+            { error: createResult.error, playerId, gameId },
+            'Failed to create game player data automatically',
+          );
+          return {
+            success: false,
+            error: createResult.error || 'Failed to initialize player data',
+          };
+        }
+
+        // Use the newly created data
+        currentData = createResult.data;
+        logger.info({ playerId, gameId }, 'Game player data created automatically');
+      } else if (fetchError || !currentData) {
         logger.error(
           { error: fetchError, playerId, gameId },
           'Error fetching game player data for answer submission',

@@ -112,8 +112,16 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
         });
       } catch (broadcastError) {
         // Log but don't fail the request - answer was already submitted successfully
+        const errorDetails =
+          broadcastError instanceof Error
+            ? {
+                message: broadcastError.message,
+                stack: broadcastError.stack,
+                name: broadcastError.name,
+              }
+            : { error: String(broadcastError) };
         logger.warn(
-          { error: broadcastError, gameId, playerId, questionId: answer.question_id },
+          { ...errorDetails, gameId, playerId, questionId: answer.question_id },
           'Failed to broadcast answer stats (answer was still submitted successfully)',
         );
       }

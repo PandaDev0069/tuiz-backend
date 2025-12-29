@@ -10,6 +10,7 @@ import {
   UpdatePlayerInput,
 } from '../types/player';
 import { logger } from '../utils/logger';
+import { gamePlayerDataService } from './gamePlayerDataService';
 
 /**
  * Result of player creation operation
@@ -174,6 +175,38 @@ export class PlayerService {
         }
       }
 
+      // Automatically create game_player_data for the player
+      const gamePlayerDataResult = await gamePlayerDataService.createGamePlayerData({
+        player_id: player.id,
+        game_id: input.game_id,
+        player_device_id: input.device_id,
+        score: 0,
+        answer_report: {
+          total_answers: 0,
+          correct_answers: 0,
+          incorrect_answers: 0,
+          questions: [],
+        },
+      });
+
+      if (!gamePlayerDataResult.success) {
+        // Log warning but don't fail - player was created successfully
+        // The game_player_data will be created automatically when submitting first answer
+        logger.warn(
+          {
+            error: gamePlayerDataResult.error,
+            playerId: player.id,
+            gameId: input.game_id,
+          },
+          'Failed to create game_player_data during player creation (will be created on first answer)',
+        );
+      } else {
+        logger.info(
+          { playerId: player.id, gameId: input.game_id },
+          'Game player data created automatically during player creation',
+        );
+      }
+
       logger.info(
         {
           playerId: player.id,
@@ -225,16 +258,41 @@ export class PlayerService {
       // Apply pagination
       queryBuilder = queryBuilder.range(query.offset, query.offset + query.limit - 1);
 
-      const { data: players, error, count } = await queryBuilder;
+      const { data: players, error } = await queryBuilder;
 
       if (error) {
         logger.error({ error, gameId }, 'Error fetching players');
         return null;
       }
 
+      // Deduplicate players by device_id - if multiple players have the same device_id,
+      // keep only the first one (earliest created_at) to prevent duplicate display
+      const playersArray = players || [];
+      const deviceIdMap = new Map<string, (typeof playersArray)[0]>();
+
+      playersArray.forEach((player) => {
+        if (player.device_id) {
+          const existing = deviceIdMap.get(player.device_id);
+          // Keep the first player (earliest created_at) for each device_id
+          if (!existing || new Date(player.created_at) < new Date(existing.created_at)) {
+            deviceIdMap.set(player.device_id, player);
+          }
+        } else {
+          // If no device_id, include the player (shouldn't happen, but handle it)
+          // Use player.id as key to ensure uniqueness
+          deviceIdMap.set(player.id, player);
+        }
+      });
+
+      // Convert map values to array
+      const deduplicatedPlayers = Array.from(deviceIdMap.values());
+
+      // Recalculate count after deduplication
+      const deduplicatedCount = deduplicatedPlayers.length;
+
       return {
-        players: players || [],
-        total: count || 0,
+        players: deduplicatedPlayers,
+        total: deduplicatedCount,
         game_id: gameId,
         limit: query.limit,
         offset: query.offset,
