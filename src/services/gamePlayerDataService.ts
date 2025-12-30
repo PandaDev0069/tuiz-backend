@@ -640,11 +640,8 @@ export class GamePlayerDataService {
   ): Promise<LeaderboardResponse | null> {
     try {
       // Join game_player_data with players table for player info
-      const {
-        data: leaderboardData,
-        error,
-        count,
-      } = await this.client
+      // Exclude host from leaderboard (is_host = false)
+      const { data: leaderboardData, error } = await this.client
         .from('game_player_data')
         .select(
           `
@@ -660,6 +657,7 @@ export class GamePlayerDataService {
           { count: 'exact' },
         )
         .eq('game_id', gameId)
+        .eq('players.is_host', false) // Exclude host from leaderboard
         .order('score', { ascending: false })
         .range(query.offset, query.offset + query.limit - 1);
 
@@ -670,7 +668,7 @@ export class GamePlayerDataService {
 
       // Transform data to leaderboard entries
       interface PlayerData {
-        name: string;
+        player_name: string;
         device_id: string;
         is_host: boolean;
         user_id: string | null;
@@ -683,7 +681,13 @@ export class GamePlayerDataService {
         answer_report: AnswerReport;
         players: PlayerData | PlayerData[];
       }
-      const entries: LeaderboardEntry[] = (leaderboardData || []).map(
+      // Filter out host players (in case the query filter didn't work)
+      const filteredData = (leaderboardData || []).filter((item: LeaderboardData) => {
+        const player = Array.isArray(item.players) ? item.players[0] : item.players;
+        return !player?.is_host; // Exclude host
+      });
+
+      const entries: LeaderboardEntry[] = filteredData.map(
         (item: LeaderboardData, index: number) => {
           const answerReport = item.answer_report as AnswerReport;
           const player = Array.isArray(item.players) ? item.players[0] : item.players;
@@ -711,7 +715,7 @@ export class GamePlayerDataService {
 
           return {
             player_id: item.player_id,
-            player_name: player?.name || 'Unknown',
+            player_name: player?.player_name || 'Unknown',
             device_id: player?.device_id || '',
             score: item.score,
             rank: currentRank,
@@ -730,10 +734,14 @@ export class GamePlayerDataService {
         },
       );
 
+      // Adjust total count to exclude hosts
+      // If we filtered out hosts, the count might be off, so use entries length
+      const totalWithoutHosts = entries.length;
+
       return {
         game_id: gameId,
         entries,
-        total: count || 0,
+        total: totalWithoutHosts, // Use filtered count
         limit: query.limit,
         offset: query.offset,
         updated_at: new Date().toISOString(),
