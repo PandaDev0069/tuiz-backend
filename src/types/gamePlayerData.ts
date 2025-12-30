@@ -26,6 +26,16 @@ export interface AnswerReport {
     fastest_response: number;
     slowest_response: number;
   };
+  // Rank tracking for leaderboard changes
+  previous_rank?: number; // Rank before last score update
+  current_rank?: number; // Current rank
+  rank_history?: Array<{
+    question_number: number;
+    rank: number;
+    score: number;
+    points_earned: number;
+    timestamp: string;
+  }>;
 }
 
 /**
@@ -105,6 +115,9 @@ export interface LeaderboardEntry {
   device_id: string;
   score: number;
   rank: number;
+  previous_rank?: number; // Rank before last update
+  rank_change?: 'up' | 'down' | 'same'; // Rank change direction
+  score_change?: number; // Points added in last question
   total_answers: number;
   correct_answers: number;
   accuracy: number;

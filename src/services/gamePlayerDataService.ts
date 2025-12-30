@@ -434,8 +434,51 @@ export class GamePlayerDataService {
         slowest_response: Math.max(...responseTimes),
       };
 
+      // Calculate previous rank before updating score
+      // Only use stored current_rank as previous_rank if it exists (not first question)
+      const existingCurrentRank = answerReport?.current_rank;
+      let previousRank: number | undefined;
+
+      if (existingCurrentRank !== undefined) {
+        // Use stored current_rank as previous_rank for next question
+        // This means we're on question 2 or later
+        previousRank = existingCurrentRank;
+      }
+      // If existingCurrentRank is undefined, this is the first question
+      // Don't set previousRank - it will remain undefined
+      // This way, the first leaderboard won't show rank changes
+
       // Update score
       const newScore = currentData.score + computedPoints;
+
+      // Calculate new rank after updating score
+      const { count: newHigherScores } = await this.client
+        .from('game_player_data')
+        .select('*', { count: 'exact', head: true })
+        .eq('game_id', gameId)
+        .gt('score', newScore);
+      const newRank = (newHigherScores || 0) + 1;
+
+      // Update answer report with rank tracking
+      // Only store previous_rank if we had a previous current_rank (not first question)
+      if (previousRank !== undefined) {
+        updatedReport.previous_rank = previousRank;
+      }
+      // Always update current_rank for next question's comparison
+      updatedReport.current_rank = newRank;
+
+      // Add to rank history
+      const existingHistory = (answerReport.rank_history || []) as AnswerReport['rank_history'];
+      updatedReport.rank_history = [
+        ...(existingHistory || []),
+        {
+          question_number: answer.question_number,
+          rank: newRank,
+          score: newScore,
+          points_earned: computedPoints,
+          timestamp: new Date().toISOString(),
+        },
+      ];
 
       // Save updates
       const { data: updatedData, error: updateError } = await this.client
@@ -644,13 +687,37 @@ export class GamePlayerDataService {
         (item: LeaderboardData, index: number) => {
           const answerReport = item.answer_report as AnswerReport;
           const player = Array.isArray(item.players) ? item.players[0] : item.players;
+          const currentRank = query.offset + index + 1;
+          const previousRank = answerReport?.previous_rank;
+
+          // Determine rank change
+          // Only show rank change if previous_rank exists (not first leaderboard)
+          let rankChange: 'up' | 'down' | 'same' | undefined = undefined;
+          if (previousRank !== undefined) {
+            if (currentRank < previousRank) {
+              rankChange = 'up';
+            } else if (currentRank > previousRank) {
+              rankChange = 'down';
+            } else {
+              rankChange = 'same';
+            }
+          }
+
+          // Get score change from most recent question
+          const rankHistory = answerReport?.rank_history || [];
+          const mostRecentEntry =
+            rankHistory.length > 0 ? rankHistory[rankHistory.length - 1] : null;
+          const scoreChange = mostRecentEntry?.points_earned || 0;
 
           return {
             player_id: item.player_id,
             player_name: player?.name || 'Unknown',
             device_id: player?.device_id || '',
             score: item.score,
-            rank: query.offset + index + 1,
+            rank: currentRank,
+            previous_rank: previousRank,
+            rank_change: rankChange,
+            score_change: scoreChange,
             total_answers: answerReport?.total_answers || 0,
             correct_answers: answerReport?.correct_answers || 0,
             accuracy:
