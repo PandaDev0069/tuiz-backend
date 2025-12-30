@@ -385,6 +385,42 @@ router.post(
           questionId: currentQuestionId,
           counts: answerStats,
         });
+
+        // Emit leaderboard update event with actual leaderboard data
+        // @agent1 - Enhanced leaderboard WebSocket support
+        try {
+          const { gamePlayerDataService } = await import('../services/gamePlayerDataService');
+          const leaderboard = await gamePlayerDataService.getLeaderboard(gameId, {
+            offset: 0,
+            limit: 100, // Get all players for leaderboard
+          });
+
+          if (leaderboard) {
+            wsManager.broadcastToRoom(gameId, 'game:leaderboard:update', {
+              roomId: gameId,
+              leaderboard: {
+                game_id: gameId,
+                entries: leaderboard.entries,
+                total: leaderboard.total,
+                updated_at: leaderboard.updated_at,
+              },
+            });
+          } else {
+            // Fallback: just emit event without data (frontend will fetch)
+            wsManager.broadcastToRoom(gameId, 'game:leaderboard:update', {
+              roomId: gameId,
+            });
+          }
+        } catch (leaderboardError) {
+          logger.warn(
+            { error: leaderboardError, gameId },
+            'Failed to fetch leaderboard for WebSocket event (emitting without data)',
+          );
+          // Fallback: emit event without data
+          wsManager.broadcastToRoom(gameId, 'game:leaderboard:update', {
+            roomId: gameId,
+          });
+        }
       } catch (wsError) {
         logger.warn(
           { error: wsError, gameId },
@@ -412,8 +448,236 @@ router.post(
 );
 
 /**
+ * POST /games/:gameId/questions/explanation/show
+ * Show explanation for current question
+ */
+router.post(
+  '/:gameId/questions/explanation/show',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { gameId } = req.params;
+      const userId = req.user?.id;
+
+      // Verify game ownership
+      const { data: game, error: gameError } = await supabaseAdmin
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .eq('user_id', userId)
+        .single();
+
+      if (gameError || !game) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game not found or unauthorized',
+        });
+      }
+
+      // Get current game flow to get question ID
+      const flowResult = await gameFlowService.getGameFlow(gameId);
+      if (!flowResult.success || !flowResult.gameFlow) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game flow not found',
+        });
+      }
+
+      const gameFlow = flowResult.gameFlow;
+      const currentQuestionId = gameFlow.current_question_id;
+
+      if (!currentQuestionId) {
+        return res.status(400).json({
+          error: 'invalid_state',
+          message: 'No active question to show explanation for',
+        });
+      }
+
+      // Fetch question to get explanation data
+      const { data: question, error: questionError } = await supabaseAdmin
+        .from('questions')
+        .select('explanation_title, explanation_text, explanation_image_url, show_explanation_time')
+        .eq('id', currentQuestionId)
+        .single();
+
+      if (questionError || !question) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Question not found',
+        });
+      }
+
+      // Use default of 10 seconds if show_explanation_time is null (consistent with GET endpoint)
+      const showExplanationTime = question.show_explanation_time || 10;
+
+      // Emit WebSocket event to show explanation
+      wsManager.broadcastToRoom(gameId, 'game:explanation:show', {
+        roomId: gameId,
+        questionId: currentQuestionId,
+        explanation: {
+          title: question.explanation_title,
+          text: question.explanation_text,
+          image_url: question.explanation_image_url,
+          show_time: showExplanationTime,
+        },
+      });
+
+      logger.info({ gameId, questionId: currentQuestionId }, 'Explanation shown');
+      return res.status(200).json({
+        message: 'Explanation shown',
+        explanation: {
+          title: question.explanation_title,
+          text: question.explanation_text,
+          image_url: question.explanation_image_url,
+          show_time: question.show_explanation_time,
+        },
+      });
+    } catch (error) {
+      logger.error({ error, gameId: req.params.gameId }, 'Unexpected error showing explanation');
+      return res.status(500).json({
+        error: 'server_error',
+        message: 'Failed to show explanation',
+      });
+    }
+  },
+);
+
+/**
+ * POST /games/:gameId/questions/explanation/hide
+ * Hide explanation for current question
+ */
+router.post(
+  '/:gameId/questions/explanation/hide',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const { gameId } = req.params;
+      const userId = req.user?.id;
+
+      // Verify game ownership
+      const { data: game, error: gameError } = await supabaseAdmin
+        .from('games')
+        .select('*')
+        .eq('id', gameId)
+        .eq('user_id', userId)
+        .single();
+
+      if (gameError || !game) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game not found or unauthorized',
+        });
+      }
+
+      // Get current game flow to get question ID
+      const flowResult = await gameFlowService.getGameFlow(gameId);
+      if (!flowResult.success || !flowResult.gameFlow) {
+        return res.status(404).json({
+          error: 'not_found',
+          message: 'Game flow not found',
+        });
+      }
+
+      const gameFlow = flowResult.gameFlow;
+      const currentQuestionId = gameFlow.current_question_id;
+
+      if (!currentQuestionId) {
+        return res.status(400).json({
+          error: 'invalid_state',
+          message: 'No active question to hide explanation for',
+        });
+      }
+
+      // Emit WebSocket event to hide explanation
+      wsManager.broadcastToRoom(gameId, 'game:explanation:hide', {
+        roomId: gameId,
+        questionId: currentQuestionId,
+      });
+
+      logger.info({ gameId, questionId: currentQuestionId }, 'Explanation hidden');
+      return res.status(200).json({
+        message: 'Explanation hidden',
+      });
+    } catch (error) {
+      logger.error({ error, gameId: req.params.gameId }, 'Unexpected error hiding explanation');
+      return res.status(500).json({
+        error: 'server_error',
+        message: 'Failed to hide explanation',
+      });
+    }
+  },
+);
+
+/**
+ * GET /games/:gameId/questions/:questionId/explanation
+ * Get explanation for a question
+ * Public access (for displaying explanation)
+ */
+router.get('/:gameId/questions/:questionId/explanation', async (req: Request, res: Response) => {
+  try {
+    const { gameId, questionId } = req.params;
+
+    // Verify game exists
+    const { data: game, error: gameError } = await supabaseAdmin
+      .from('games')
+      .select('id, quiz_set_id')
+      .eq('id', gameId)
+      .single();
+
+    if (gameError || !game) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Game not found',
+      });
+    }
+
+    // Fetch question with explanation data
+    const { data: question, error: questionError } = await supabaseAdmin
+      .from('questions')
+      .select(
+        'id, explanation_title, explanation_text, explanation_image_url, show_explanation_time',
+      )
+      .eq('id', questionId)
+      .single();
+
+    if (questionError || !question) {
+      return res.status(404).json({
+        error: 'not_found',
+        message: 'Question not found',
+      });
+    }
+
+    // Check if explanation exists
+    if (!question.explanation_text && !question.explanation_title) {
+      return res.status(404).json({
+        error: 'no_explanation',
+        message: 'No explanation available for this question',
+      });
+    }
+
+    return res.status(200).json({
+      question_id: question.id,
+      explanation_title: question.explanation_title,
+      explanation_text: question.explanation_text,
+      explanation_image_url: question.explanation_image_url,
+      show_explanation_time: question.show_explanation_time || 10, // Default 10 seconds
+    });
+  } catch (error) {
+    logger.error(
+      { error, gameId: req.params.gameId, questionId: req.params.questionId },
+      'Unexpected error fetching explanation',
+    );
+    return res.status(500).json({
+      error: 'server_error',
+      message: 'Failed to fetch explanation',
+    });
+  }
+});
+
+/**
  * POST /games/:gameId/questions/next
  * Advance to the next question (updates game_flows with next question info)
+ * @agent1 - Fixed game loop repetition issue
  */
 router.post(
   '/:gameId/questions/next',
@@ -466,13 +730,22 @@ router.post(
         });
       }
 
-      const nextIndex = currentIndex + 1;
-      // Safe: nextIndex is validated against questions.length before use
-      // eslint-disable-next-line security/detect-object-injection
-      const nextQuestion = questions[nextIndex];
-      const questionAfterNext = questions[nextIndex + 1] || null;
+      // Validate current index is within bounds
+      if (currentIndex < 0 || currentIndex >= questions.length) {
+        logger.error(
+          { gameId, currentIndex, totalQuestions: questions.length },
+          'Current question index is out of bounds',
+        );
+        return res.status(400).json({
+          error: 'invalid_index',
+          message: `Current question index ${currentIndex} is out of bounds (total: ${questions.length})`,
+        });
+      }
 
-      if (!nextQuestion) {
+      const nextIndex = currentIndex + 1;
+
+      // Check if there are more questions
+      if (nextIndex >= questions.length) {
         // No more questions - game is complete
         const endResult = await gameFlowService.updateGameFlow(gameId, {
           current_question_id: null,
@@ -493,13 +766,21 @@ router.post(
         // Emit game end event via phase change
         wsManager.broadcastPhaseChange(gameId, 'ended');
 
-        logger.info({ gameId }, 'Game completed - no more questions');
+        logger.info(
+          { gameId, totalQuestions: questions.length },
+          'Game completed - no more questions',
+        );
         return res.status(200).json({
           message: 'Game completed',
           gameFlow: endResult.gameFlow,
           isComplete: true,
         });
       }
+
+      // Safe: nextIndex is validated against questions.length before use
+      // eslint-disable-next-line security/detect-object-injection
+      const nextQuestion = questions[nextIndex];
+      const questionAfterNext = questions[nextIndex + 1] || null;
 
       // Update game flow with next question info (but don't start it yet)
       const updateResult = await gameFlowService.updateGameFlow(gameId, {

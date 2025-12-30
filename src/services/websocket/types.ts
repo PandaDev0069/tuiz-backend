@@ -162,8 +162,38 @@ export interface ServerEvents {
   // Leaderboard
   'game:leaderboard:update': (data: {
     roomId: string;
-    rankings: Array<{ playerId: string; score: number; rank: number }>;
+    rankings?: Array<{ playerId: string; score: number; rank: number }>;
+    leaderboard?: {
+      game_id: string;
+      entries: Array<{
+        player_id: string;
+        player_name: string;
+        device_id: string;
+        score: number;
+        rank: number;
+        total_answers: number;
+        correct_answers: number;
+        accuracy: number;
+        is_host: boolean;
+        is_logged_in: boolean;
+      }>;
+      total: number;
+      updated_at: string;
+    };
   }) => void;
+
+  // Explanation
+  'game:explanation:show': (data: {
+    roomId: string;
+    questionId: string;
+    explanation: {
+      title: string | null;
+      text: string | null;
+      image_url: string | null;
+      show_time: number | null;
+    };
+  }) => void;
+  'game:explanation:hide': (data: { roomId: string; questionId: string }) => void;
 
   // Player management
   'game:player-kicked': (data: {
