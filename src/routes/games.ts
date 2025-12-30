@@ -1,6 +1,6 @@
 import express from 'express';
 import { ZodError } from 'zod';
-import { supabaseAdmin } from '../lib/supabase';
+import { supabaseAdmin, incrementQuizPlayCount } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
 import { wsManager } from '../server';
 import { gameFlowService } from '../services/gameFlowService';
@@ -165,6 +165,21 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
         );
         // Don't fail the request, game was created successfully
       }
+    }
+
+    // Increment quiz set times_played count
+    try {
+      await incrementQuizPlayCount(input.quiz_set_id);
+      logger.info(
+        { quizSetId: input.quiz_set_id, gameId: game.id },
+        'Quiz set times_played incremented successfully',
+      );
+    } catch (incrementError) {
+      // Log error but don't fail the request - game was already created successfully
+      logger.error(
+        { error: incrementError, quizSetId: input.quiz_set_id, gameId: game.id },
+        'Failed to increment quiz set times_played, but game was created',
+      );
     }
 
     logger.info(
