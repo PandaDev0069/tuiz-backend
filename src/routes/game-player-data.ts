@@ -73,7 +73,8 @@ router.post('/:gameId/players/:playerId/data', async (req, res) => {
 router.post('/:gameId/players/:playerId/answer', async (req, res) => {
   const requestId = req.headers['x-request-id'] as string;
   const { gameId, playerId } = req.params;
-  const broadcast = wsManager.broadcastToRoom as (
+  // IMPORTANT: bind to preserve `this` inside WebSocketManager (otherwise `this` becomes undefined)
+  const broadcast = wsManager.broadcastToRoom.bind(wsManager) as (
     roomId: string,
     event: string,
     payload: unknown,
