@@ -1,10 +1,31 @@
-// src/types/game.ts
+// ====================================================
+// File Name   : game.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-11-19
+// Last Update : 2025-12-22
+
+// Description:
+// - Comprehensive game type definitions for multiplayer quiz games
+// - Real-time game flow, player management, and leaderboard tracking
+// - Socket.IO event payloads for client-server communication
+// - Zod validation schemas for all game operations
+
+// Notes:
+// - Game lifecycle: WAITING → ACTIVE → PAUSED/FINISHED
+// - Max 200 players per game
+// - Host player created automatically during game initialization
+// - Game codes are 10-character alphanumeric strings
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-// ============================================================================
-// ENUMS (matching database)
-// ============================================================================
-
+//----------------------------------------------------
+// 2. Enums
+//----------------------------------------------------
 export enum GameStatus {
   WAITING = 'waiting',
   ACTIVE = 'active',
@@ -12,10 +33,9 @@ export enum GameStatus {
   FINISHED = 'finished',
 }
 
-// ============================================================================
-// CORE INTERFACES (matching database schema)
-// ============================================================================
-
+//----------------------------------------------------
+// 3. Core Interfaces
+//----------------------------------------------------
 export interface Game {
   id: string;
   quiz_set_id: string;
@@ -23,7 +43,7 @@ export interface Game {
   current_players: number;
   status: GameStatus;
   current_question_index: number;
-  current_question_start_time: string | null; // ISO-8601 timestamp
+  current_question_start_time: string | null;
   game_settings: GameSettings;
   locked: boolean;
   created_at: string;
@@ -71,10 +91,9 @@ export interface GamePlayerData {
   updated_at: string;
 }
 
-// ============================================================================
-// NESTED INTERFACES
-// ============================================================================
-
+//----------------------------------------------------
+// 4. Nested Interfaces
+//----------------------------------------------------
 export interface GameSettings {
   show_question_only?: boolean;
   show_explanation?: boolean;
@@ -82,7 +101,7 @@ export interface GameSettings {
   streak_bonus?: boolean;
   show_correct_answer?: boolean;
   max_players?: number;
-  [key: string]: unknown; // Allow additional settings
+  [key: string]: unknown;
 }
 
 export interface AnswerReport {
@@ -92,15 +111,14 @@ export interface AnswerReport {
 export interface QuestionAnswer {
   answer: string;
   is_correct: boolean;
-  time_taken: number; // milliseconds
+  time_taken: number;
   points_earned: number;
   answered_at: string;
 }
 
-// ============================================================================
-// EXTENDED INTERFACES
-// ============================================================================
-
+//----------------------------------------------------
+// 5. Extended Interfaces
+//----------------------------------------------------
 export interface GameWithPlayers extends Game {
   players: Player[];
 }
@@ -119,10 +137,9 @@ export interface PlayerWithData extends Player {
   player_data: GamePlayerData | null;
 }
 
-// ============================================================================
-// LEADERBOARD INTERFACES
-// ============================================================================
-
+//----------------------------------------------------
+// 6. Leaderboard Interfaces
+//----------------------------------------------------
 export interface LeaderboardEntry {
   player_id: string;
   player_name: string;
@@ -137,91 +154,77 @@ export interface GameLeaderboard {
   total_players: number;
 }
 
-// ============================================================================
-// REQUEST INTERFACES
-// ============================================================================
-
-// Create Game Request
+//----------------------------------------------------
+// 7. Request Interfaces
+//----------------------------------------------------
 export interface CreateGameRequest {
   quiz_set_id: string;
   game_settings?: Partial<GameSettings>;
-  player_name?: string; // Host player name
+  player_name?: string;
 }
 
-// Join Game Request
 export interface JoinGameRequest {
   game_code: string;
   player_name: string;
   device_id?: string;
 }
 
-// Start Game Request
 export interface StartGameRequest {
   game_id: string;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// Answer Question Request
 export interface AnswerQuestionRequest {
   game_id: string;
   player_id: string;
   question_id: string;
-  answer: string; // Answer ID or text
-  time_taken: number; // milliseconds
+  answer: string;
+  time_taken: number;
   device_id?: string;
 }
 
-// Next Question Request
 export interface NextQuestionRequest {
   game_id: string;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// Pause/Resume Game Request
 export interface PauseResumeGameRequest {
   game_id: string;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// End Game Request
 export interface EndGameRequest {
   game_id: string;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// Update Game Settings Request
 export interface UpdateGameSettingsRequest {
   game_id: string;
   game_settings: Partial<GameSettings>;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// Lock/Unlock Game Request
 export interface LockUnlockGameRequest {
   game_id: string;
   locked: boolean;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// Kick Player Request
 export interface KickPlayerRequest {
   game_id: string;
   player_id: string;
-  device_id?: string; // Host device ID for verification
+  device_id?: string;
 }
 
-// ============================================================================
-// RESPONSE INTERFACES
-// ============================================================================
-
-// Create Game Response
+//----------------------------------------------------
+// 8. Response Interfaces
+//----------------------------------------------------
 export interface CreateGameResponse {
   game: Game;
   host_player: Player;
   message: string;
 }
 
-// Join Game Response
 export interface JoinGameResponse {
   game: Game;
   player: Player;
@@ -229,14 +232,12 @@ export interface JoinGameResponse {
   message: string;
 }
 
-// Start Game Response
 export interface StartGameResponse {
   game: Game;
   flow: GameFlow;
   message: string;
 }
 
-// Game State Response
 export interface GameStateResponse {
   game: Game;
   flow: GameFlow | null;
@@ -245,7 +246,6 @@ export interface GameStateResponse {
   is_host: boolean;
 }
 
-// Answer Submission Response
 export interface AnswerSubmissionResponse {
   player_data: GamePlayerData;
   is_correct: boolean;
@@ -254,7 +254,6 @@ export interface AnswerSubmissionResponse {
   message: string;
 }
 
-// Next Question Response
 export interface NextQuestionResponse {
   game: Game;
   flow: GameFlow;
@@ -263,14 +262,12 @@ export interface NextQuestionResponse {
   message: string;
 }
 
-// End Game Response
 export interface EndGameResponse {
   game: Game;
   leaderboard: LeaderboardEntry[];
   message: string;
 }
 
-// Game Code Validation Response
 export interface GameCodeValidationResponse {
   game_code: string;
   is_valid: boolean;
@@ -282,11 +279,9 @@ export interface GameCodeValidationResponse {
   message: string;
 }
 
-// ============================================================================
-// VALIDATION SCHEMAS (Zod)
-// ============================================================================
-
-// Game Status Schema
+//----------------------------------------------------
+// 9. Validation Schemas
+//----------------------------------------------------
 export const GameStatusSchema = z.nativeEnum(GameStatus);
 
 // Create Game Flow Schema
@@ -307,9 +302,9 @@ export const GameSettingsSchema = z
     time_bonus: z.boolean().optional(),
     streak_bonus: z.boolean().optional(),
     show_correct_answer: z.boolean().optional(),
-    max_players: z.number().int().min(1).max(400).optional(),
+    max_players: z.number().int().min(1).max(200).optional(),
   })
-  .passthrough(); // Allow additional fields
+  .passthrough();
 
 // Answer Report Schema
 export const QuestionAnswerSchema = z.object({
@@ -327,7 +322,7 @@ export const CreateGameSchema = z.object({
   quiz_set_id: z.string().uuid('Invalid quiz set ID'),
   game_settings: GameSettingsSchema.optional(),
   player_name: z.string().min(1).max(100).optional(),
-  device_id: z.string().uuid().optional(), // Host device ID for creating host player
+  device_id: z.string().uuid().optional(),
 });
 
 // Join Game Schema
@@ -403,10 +398,9 @@ export const GameCodeValidationSchema = z.object({
     .regex(/^[A-Z0-9]+$/, 'Game code must contain only uppercase letters and numbers'),
 });
 
-// ============================================================================
-// QUERY PARAMETERS
-// ============================================================================
-
+//----------------------------------------------------
+// 10. Query Parameters & Pagination
+//----------------------------------------------------
 export interface GameQueryParams {
   status?: GameStatus;
   user_id?: string;
@@ -428,10 +422,6 @@ export const GameQuerySchema = z.object({
   sort_order: z.enum(['asc', 'desc']).default('desc'),
 });
 
-// ============================================================================
-// PAGINATION
-// ============================================================================
-
 export interface PaginatedGameResponse<T> {
   data: T[];
   pagination: {
@@ -444,21 +434,18 @@ export interface PaginatedGameResponse<T> {
   };
 }
 
-// ============================================================================
-// ERROR TYPES
-// ============================================================================
-
+//----------------------------------------------------
+// 11. Error Types
+//----------------------------------------------------
 export interface GameError {
   error: string;
   message: string;
   code?: string;
 }
 
-// ============================================================================
-// SOCKET.IO EVENT PAYLOADS
-// ============================================================================
-
-// Server -> Client Events
+//----------------------------------------------------
+// 12. Socket.IO Event Payloads
+//----------------------------------------------------
 export interface ServerGameCreatedPayload {
   game: Game;
   host_player: Player;
@@ -525,7 +512,6 @@ export interface ServerGameErrorPayload {
   message: string;
 }
 
-// Client -> Server Events
 export interface ClientJoinGamePayload {
   game_code: string;
   player_name: string;
@@ -571,10 +557,9 @@ export interface ClientEndGamePayload {
   device_id?: string;
 }
 
-// ============================================================================
-// TYPE EXPORTS FOR VALIDATION
-// ============================================================================
-
+//----------------------------------------------------
+// 13. Type Exports for Validation
+//----------------------------------------------------
 export type CreateGameInput = z.infer<typeof CreateGameSchema>;
 export type JoinGameInput = z.infer<typeof JoinGameSchema>;
 export type StartGameInput = z.infer<typeof StartGameSchema>;
@@ -587,11 +572,9 @@ export type LockUnlockGameInput = z.infer<typeof LockUnlockGameSchema>;
 export type KickPlayerInput = z.infer<typeof KickPlayerSchema>;
 export type GameCodeValidationInput = z.infer<typeof GameCodeValidationSchema>;
 
-// ============================================================================
-// UTILITY TYPES
-// ============================================================================
-
-// Helper type for database insertions (omits auto-generated fields)
+//----------------------------------------------------
+// 14. Utility Types
+//----------------------------------------------------
 export type GameInsert = Omit<
   Game,
   'id' | 'created_at' | 'updated_at' | 'current_players' | 'current_question_index'
@@ -603,7 +586,6 @@ export type GameFlowInsert = Omit<GameFlow, 'id' | 'created_at' | 'updated_at'>;
 
 export type GamePlayerDataInsert = Omit<GamePlayerData, 'id' | 'created_at' | 'updated_at'>;
 
-// Helper type for database updates (all fields optional except id)
 export type GameUpdate = Partial<Omit<Game, 'id' | 'created_at'>>;
 
 export type PlayerUpdate = Partial<Omit<Player, 'id' | 'created_at' | 'game_id'>>;
