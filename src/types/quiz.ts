@@ -1,10 +1,30 @@
-// src/types/quiz.ts
+// ====================================================
+// File Name   : quiz.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-10
+// Last Update : 2026-01-03
+
+// Description:
+// - Comprehensive quiz type definitions and validation schemas
+// - Supports multiple choice and true/false question types
+// - Includes CRUD interfaces and Zod validation
+
+// Notes:
+// - Quiz codes: 6-digit numbers (100000-999999)
+// - Max players: 1-200 per quiz
+// - Difficulty levels: easy, medium, hard, expert
+// - Question types: multiple_choice, true_false
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-// ============================================================================
-// ENUMS (matching frontend)
-// ============================================================================
-
+//----------------------------------------------------
+// 2. Enums
+//----------------------------------------------------
 export enum DifficultyLevel {
   EASY = 'easy',
   MEDIUM = 'medium',
@@ -23,9 +43,9 @@ export enum QuestionType {
   TRUE_FALSE = 'true_false',
 }
 
-// ============================================================================
-// CORE INTERFACES (matching frontend)
-// ============================================================================
+//----------------------------------------------------
+// 3. Core Interfaces
+//----------------------------------------------------
 
 export interface QuizSet {
   id: string;
@@ -87,10 +107,9 @@ export interface QuizPlaySettings {
   max_players: number;
 }
 
-// ============================================================================
-// EXTENDED INTERFACES
-// ============================================================================
-
+//----------------------------------------------------
+// 4. Extended Interfaces
+//----------------------------------------------------
 export interface QuizSetWithQuestions extends QuizSet {
   questions: Question[];
 }
@@ -103,11 +122,9 @@ export interface QuizSetComplete extends QuizSet {
   questions: QuestionWithAnswers[];
 }
 
-// ============================================================================
-// REQUEST/RESPONSE INTERFACES
-// ============================================================================
-
-// Create Quiz Set Request
+//----------------------------------------------------
+// 5. Request Interfaces
+//----------------------------------------------------
 export interface CreateQuizSetRequest {
   title: string;
   description: string;
@@ -119,13 +136,11 @@ export interface CreateQuizSetRequest {
   play_settings: Partial<QuizPlaySettings>;
 }
 
-// Update Quiz Set Request
 export interface UpdateQuizSetRequest extends Partial<CreateQuizSetRequest> {
   id: string;
   status?: QuizStatus;
 }
 
-// Create Question Request
 export interface CreateQuestionRequest {
   question_text: string;
   question_type: QuestionType;
@@ -142,7 +157,6 @@ export interface CreateQuestionRequest {
   answers: CreateAnswerRequest[];
 }
 
-// Create Answer Request
 export interface CreateAnswerRequest {
   answer_text: string;
   image_url?: string;
@@ -150,10 +164,11 @@ export interface CreateAnswerRequest {
   order_index: number;
 }
 
-// Update Question Request
 export type UpdateQuestionRequest = Partial<CreateQuestionRequest>;
 
-// Quiz Set Response (for API responses)
+//----------------------------------------------------
+// 6. Response Interfaces
+//----------------------------------------------------
 export interface QuizSetResponse {
   id: string;
   user_id: string;
@@ -174,7 +189,6 @@ export interface QuizSetResponse {
   cloned_from?: string;
 }
 
-// Question Response
 export interface QuestionResponse {
   id: string;
   question_set_id: string;
@@ -194,7 +208,6 @@ export interface QuestionResponse {
   show_explanation_time: number;
 }
 
-// Answer Response
 export interface AnswerResponse {
   id: string;
   question_id: string;
@@ -206,20 +219,21 @@ export interface AnswerResponse {
   updated_at: string;
 }
 
-// ============================================================================
-// VALIDATION SCHEMAS (Zod)
-// ============================================================================
+export interface QuizError {
+  error: string;
+  message: string;
+  code?: string;
+}
 
-// Difficulty Level Schema
+//----------------------------------------------------
+// 7. Validation Schemas
+//----------------------------------------------------
 export const DifficultyLevelSchema = z.nativeEnum(DifficultyLevel);
 
-// Quiz Status Schema
 export const QuizStatusSchema = z.nativeEnum(QuizStatus);
 
-// Question Type Schema
 export const QuestionTypeSchema = z.nativeEnum(QuestionType);
 
-// Quiz Play Settings Schema
 export const QuizPlaySettingsSchema = z.object({
   code: z.number().int().min(100000).max(999999),
   show_question_only: z.boolean(),
@@ -227,10 +241,9 @@ export const QuizPlaySettingsSchema = z.object({
   time_bonus: z.boolean(),
   streak_bonus: z.boolean(),
   show_correct_answer: z.boolean(),
-  max_players: z.number().int().min(1).max(400),
+  max_players: z.number().int().min(1).max(200),
 });
 
-// Create Quiz Set Schema
 export const CreateQuizSetSchema = z.object({
   title: z.string().min(1).max(100),
   description: z.string().min(1).max(500),
@@ -242,7 +255,6 @@ export const CreateQuizSetSchema = z.object({
   play_settings: QuizPlaySettingsSchema.partial(),
 });
 
-// Update Quiz Set Schema
 export const UpdateQuizSetSchema = z.object({
   title: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
@@ -255,7 +267,6 @@ export const UpdateQuizSetSchema = z.object({
   status: QuizStatusSchema.optional(),
 });
 
-// Create Answer Schema
 export const CreateAnswerSchema = z.object({
   answer_text: z.string().min(1).max(200),
   image_url: z.string().url().nullable().optional(),
@@ -263,7 +274,6 @@ export const CreateAnswerSchema = z.object({
   order_index: z.number().int().min(0),
 });
 
-// Create Question Schema
 export const CreateQuestionSchema = z.object({
   question_text: z.string().min(1).max(500),
   question_type: QuestionTypeSchema,
@@ -280,7 +290,6 @@ export const CreateQuestionSchema = z.object({
   answers: z.array(CreateAnswerSchema).min(2).max(4),
 });
 
-// Update Question Schema
 export const UpdateQuestionSchema = z.object({
   question_text: z.string().min(1).max(500).optional(),
   question_type: QuestionTypeSchema.optional(),
@@ -297,7 +306,6 @@ export const UpdateQuestionSchema = z.object({
   answers: z.array(CreateAnswerSchema).min(2).max(4).optional(),
 });
 
-// Update Answer Schema
 export const UpdateAnswerSchema = z.object({
   answer_text: z.string().min(1).max(200),
   image_url: z.string().url().nullable().optional(),
@@ -305,19 +313,16 @@ export const UpdateAnswerSchema = z.object({
   order_index: z.number().int().min(0),
 });
 
-// Reorder Questions Schema
 export const ReorderQuestionsSchema = z.object({
   questionIds: z.array(z.string().uuid()).min(1),
 });
 
-// Quiz Validation Response Schema
 export const QuizValidationResponseSchema = z.object({
   isValid: z.boolean(),
   errors: z.array(z.string()),
   warnings: z.array(z.string()),
 });
 
-// Quiz Set Response Schema
 export const QuizSetResponseSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
@@ -338,14 +343,12 @@ export const QuizSetResponseSchema = z.object({
   cloned_from: z.string().nullable(),
 });
 
-// Publishing Response Schema
 export const PublishingResponseSchema = z.object({
   message: z.string(),
   quiz: QuizSetResponseSchema.optional(),
   validation: QuizValidationResponseSchema.optional(),
 });
 
-// Code Generation Response Schema
 export const CodeGenerationResponseSchema = z.object({
   message: z.string(),
   code: z.number().int().min(100000).max(999999),
@@ -355,7 +358,6 @@ export const CodeGenerationResponseSchema = z.object({
   }),
 });
 
-// Code Check Response Schema
 export const CodeCheckResponseSchema = z.object({
   code: z.number().int().min(100000).max(999999),
   isAvailable: z.boolean(),
@@ -363,7 +365,6 @@ export const CodeCheckResponseSchema = z.object({
   message: z.string(),
 });
 
-// Quiz Code Response Schema
 export const QuizCodeResponseSchema = z.object({
   quizId: z.string().uuid(),
   code: z.number().int().min(100000).max(999999).nullable(),
@@ -371,20 +372,9 @@ export const QuizCodeResponseSchema = z.object({
   message: z.string(),
 });
 
-// ============================================================================
-// ERROR TYPES
-// ============================================================================
-
-export interface QuizError {
-  error: string;
-  message: string;
-  code?: string;
-}
-
-// ============================================================================
-// QUERY PARAMETERS
-// ============================================================================
-
+//----------------------------------------------------
+// 8. Query Parameters
+//----------------------------------------------------
 export interface QuizQueryParams {
   page?: number;
   limit?: number;
@@ -393,12 +383,11 @@ export interface QuizQueryParams {
   status?: QuizStatus;
   search?: string;
   user_id?: string;
-  is_public?: string; // Changed to string for query params
+  is_public?: string;
   sort_by?: 'created_at' | 'updated_at' | 'times_played' | 'title';
   sort_order?: 'asc' | 'desc';
 }
 
-// Query validation schema
 export const QuizQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(10),
@@ -412,10 +401,9 @@ export const QuizQuerySchema = z.object({
   sort_order: z.enum(['asc', 'desc']).default('desc'),
 });
 
-// ============================================================================
-// PAGINATION
-// ============================================================================
-
+//----------------------------------------------------
+// 9. Pagination
+//----------------------------------------------------
 export interface PaginatedResponse<T> {
   data: T[];
   pagination: {
@@ -428,10 +416,9 @@ export interface PaginatedResponse<T> {
   };
 }
 
-// ============================================================================
-// TYPE EXPORTS FOR VALIDATION
-// ============================================================================
-
+//----------------------------------------------------
+// 10. Type Exports
+//----------------------------------------------------
 export type CreateQuizSetInput = z.infer<typeof CreateQuizSetSchema>;
 export type UpdateQuizSetInput = z.infer<typeof UpdateQuizSetSchema>;
 export type CreateQuestionInput = z.infer<typeof CreateQuestionSchema>;
