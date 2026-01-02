@@ -1,6 +1,29 @@
-// src/types/auth.ts
+// ====================================================
+// File Name   : auth.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-14
+// Last Update : 2025-08-22
+
+// Description:
+// - Authentication type definitions for user registration and login
+// - Extended Express Request interface for authenticated routes
+// - Session management types with JWT tokens
+
+// Notes:
+// - AuthenticatedRequest adds user and validatedQuery to Express Request
+// - Session tokens expire based on expires_in and expires_at fields
+// - Username and displayName are optional for flexibility
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { Request } from 'express';
 
+//----------------------------------------------------
+// 2. Core Interfaces
+//----------------------------------------------------
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
