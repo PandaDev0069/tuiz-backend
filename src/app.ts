@@ -1,4 +1,25 @@
-// src/app.ts
+// ====================================================
+// File Name   : app.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-08-19
+// Last Update : 2025-12-11
+
+// Description:
+// - Express application factory with middleware and route configuration
+// - Implements unified error contract for consistent API responses
+// - Configures CORS, authentication, and all API endpoints
+
+// Notes:
+// - CORS configured via corsMw from config/cors
+// - Auth middleware available for protected routes
+// - Centralized error handling via errorMw
+// - 404 responses follow unified error contract
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import express from 'express';
 import { corsMw } from './config/cors';
 import { authMiddleware } from './middleware/auth';
@@ -24,14 +45,21 @@ import uploadRoutes from './routes/upload';
 import websocketConnectionRoutes from './routes/websocket-connections';
 import { AuthenticatedRequest } from './types/auth';
 
+//----------------------------------------------------
+// 2. Application Factory
+//----------------------------------------------------
 export function createApp() {
   const app = express();
 
-  // core middleware
+  //----------------------------------------------------
+  // 3. Core Middleware
+  //----------------------------------------------------
   app.use(corsMw);
   app.use(express.json());
 
-  // welcome route
+  //----------------------------------------------------
+  // 4. Welcome Route
+  //----------------------------------------------------
   app.get('/', (req, res) => {
     res.json({
       message: 'Welcome to TUIZ Backend API',
@@ -41,7 +69,9 @@ export function createApp() {
     });
   });
 
-  // routes
+  //----------------------------------------------------
+  // 5. API Routes
+  //----------------------------------------------------
   app.use('/auth', authRoutes);
   app.use('/health', health);
   app.use('/profile', profileRoutes);
@@ -64,7 +94,9 @@ export function createApp() {
   app.use(playerRoutes);
   app.use(roomParticipantRoutes);
 
-  // Example protected route - add your protected routes here
+  //----------------------------------------------------
+  // 6. Protected Route Example
+  //----------------------------------------------------
   app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
     res.json({
       message: 'This is a protected route',
@@ -72,12 +104,13 @@ export function createApp() {
     });
   });
 
-  // 404 → unified error contract
+  //----------------------------------------------------
+  // 7. Error Handling
+  //----------------------------------------------------
   app.use((_req, res) => {
     res.status(404).json({ error: 'not_found', message: 'Route not found' });
   });
 
-  // centralized errors
   app.use(errorMw);
 
   return app;
