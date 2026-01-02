@@ -1,9 +1,29 @@
-// src/types/gameEvent.ts
+// ====================================================
+// File Name   : gameEvent.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-11
+
+// Description:
+// - Game event types for real-time game flow tracking
+// - Event recording for game replay and analytics
+// - Matches frontend game phase transitions
+
+// Notes:
+// - Events stored sequentially with sequence_number
+// - Supports game replay reconstruction
+// - Player actions tracked with device_id and socket_id
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-/**
- * Game event types matching frontend flow
- */
+//----------------------------------------------------
+// 2. Enums
+//----------------------------------------------------
 export enum GameEventType {
   // Question phase
   QUESTION_START = 'question_start',
@@ -36,26 +56,9 @@ export enum GameEventType {
   HOST_ACTION = 'host_action',
 }
 
-/**
- * Zod schema for creating a game event
- */
-export const CreateGameEventSchema = z.object({
-  game_id: z.string().uuid('Invalid game ID'),
-  event_type: z.nativeEnum(GameEventType),
-  action: z.string().min(1, 'Action is required').max(255, 'Action too long'),
-  socket_id: z.string().max(255).optional(),
-  device_id: z.string().max(255).optional(),
-  player_id: z.string().uuid().nullable().optional(),
-  user_id: z.string().uuid().nullable().optional(),
-  payload: z.record(z.string(), z.unknown()).optional().default({}),
-  sequence_number: z.number().int().min(0).optional(),
-});
-
-export type CreateGameEventInput = z.infer<typeof CreateGameEventSchema>;
-
-/**
- * Game event database interface
- */
+//----------------------------------------------------
+// 3. Core Interfaces
+//----------------------------------------------------
 export interface GameEvent {
   id: string;
   game_id: string;
@@ -64,28 +67,12 @@ export interface GameEvent {
   device_id: string | null;
   player_id: string | null;
   user_id: string | null;
-  timestamp: string; // ISO timestamp
+  timestamp: string;
   action: string;
   payload: Record<string, unknown>;
   sequence_number: number;
 }
 
-/**
- * Query parameters for fetching game events
- */
-export const GameEventQuerySchema = z.object({
-  event_type: z.string().optional(),
-  player_id: z.string().uuid().optional(),
-  limit: z.coerce.number().int().min(1).max(1000).optional().default(100),
-  offset: z.coerce.number().int().min(0).optional().default(0),
-  order: z.enum(['asc', 'desc']).optional().default('asc'),
-});
-
-export type GameEventQuery = z.infer<typeof GameEventQuerySchema>;
-
-/**
- * Response wrapper for game events list
- */
 export interface GameEventsResponse {
   events: GameEvent[];
   total: number;
@@ -94,9 +81,6 @@ export interface GameEventsResponse {
   offset: number;
 }
 
-/**
- * Game replay data structure
- */
 export interface GameReplay {
   game_id: string;
   events: GameEvent[];
@@ -114,11 +98,37 @@ export interface GameReplay {
   };
 }
 
-/**
- * Error types for game event operations
- */
 export interface GameEventError {
   error: string;
   message: string;
   requestId?: string;
 }
+
+//----------------------------------------------------
+// 4. Validation Schemas
+//----------------------------------------------------
+export const CreateGameEventSchema = z.object({
+  game_id: z.string().uuid('Invalid game ID'),
+  event_type: z.nativeEnum(GameEventType),
+  action: z.string().min(1, 'Action is required').max(255, 'Action too long'),
+  socket_id: z.string().max(255).optional(),
+  device_id: z.string().max(255).optional(),
+  player_id: z.string().uuid().nullable().optional(),
+  user_id: z.string().uuid().nullable().optional(),
+  payload: z.record(z.string(), z.unknown()).optional().default({}),
+  sequence_number: z.number().int().min(0).optional(),
+});
+
+export const GameEventQuerySchema = z.object({
+  event_type: z.string().optional(),
+  player_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional().default(100),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+  order: z.enum(['asc', 'desc']).optional().default('asc'),
+});
+
+//----------------------------------------------------
+// 5. Type Exports
+//----------------------------------------------------
+export type CreateGameEventInput = z.infer<typeof CreateGameEventSchema>;
+export type GameEventQuery = z.infer<typeof GameEventQuerySchema>;
