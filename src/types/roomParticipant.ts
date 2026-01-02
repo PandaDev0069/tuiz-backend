@@ -1,22 +1,36 @@
+// ====================================================
+// File Name   : roomParticipant.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-11
+
+// Description:
+// - Room participant type definitions and validation schemas
+// - Tracks player connections, roles, and status in game rooms
+// - Supports host, player, and spectator roles
+
+// Notes:
+// - ConnectionStatus: 'active' | 'disconnected' | 'timeout'
+// - ParticipantRole: 'host' | 'player' | 'spectator'
+// - Includes rejoin functionality for disconnected participants
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-// =============================================
-// Room Participant Types
-// =============================================
-
-/**
- * Room participant connection status matching DB enum
- */
+//----------------------------------------------------
+// 2. Type Definitions
+//----------------------------------------------------
 export type ConnectionStatus = 'active' | 'disconnected' | 'timeout';
 
-/**
- * Room participant role
- */
 export type ParticipantRole = 'host' | 'player' | 'spectator';
 
-/**
- * Room participant from database
- */
+//----------------------------------------------------
+// 3. Core Interfaces
+//----------------------------------------------------
 export interface RoomParticipant {
   id: string;
   game_id: string;
@@ -31,9 +45,6 @@ export interface RoomParticipant {
   metadata: Record<string, unknown>;
 }
 
-/**
- * Room participant with player details
- */
 export interface RoomParticipantWithPlayer {
   id: string;
   game_id: string;
@@ -51,9 +62,6 @@ export interface RoomParticipantWithPlayer {
   metadata: Record<string, unknown>;
 }
 
-/**
- * Active participants summary
- */
 export interface ActiveParticipantsSummary {
   game_id: string;
   total_participants: number;
@@ -65,13 +73,9 @@ export interface ActiveParticipantsSummary {
   participants: RoomParticipantWithPlayer[];
 }
 
-// =============================================
-// Zod Validation Schemas
-// =============================================
-
-/**
- * Schema for creating a room participant
- */
+//----------------------------------------------------
+// 4. Validation Schemas
+//----------------------------------------------------
 export const CreateRoomParticipantSchema = z.object({
   game_id: z.string().uuid('Invalid game_id format'),
   socket_id: z.string().min(1, 'socket_id is required'),
@@ -84,9 +88,6 @@ export const CreateRoomParticipantSchema = z.object({
 
 export type CreateRoomParticipantData = z.infer<typeof CreateRoomParticipantSchema>;
 
-/**
- * Schema for updating participant status
- */
 export const UpdateParticipantStatusSchema = z.object({
   status: z.enum(['active', 'disconnected', 'timeout']),
   socket_id: z.string().min(1).optional(),
@@ -95,9 +96,6 @@ export const UpdateParticipantStatusSchema = z.object({
 
 export type UpdateParticipantStatusData = z.infer<typeof UpdateParticipantStatusSchema>;
 
-/**
- * Schema for participant query filters
- */
 export const ParticipantQuerySchema = z.object({
   game_id: z.string().uuid().optional(),
   device_id: z.string().optional(),
@@ -111,9 +109,6 @@ export const ParticipantQuerySchema = z.object({
 
 export type ParticipantQuery = z.infer<typeof ParticipantQuerySchema>;
 
-/**
- * Schema for rejoining a room
- */
 export const RejoinRoomSchema = z.object({
   socket_id: z.string().min(1, 'socket_id is required'),
   device_id: z.string().min(1, 'device_id is required'),
