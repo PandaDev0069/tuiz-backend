@@ -1,5 +1,31 @@
+// ====================================================
+// File Name   : vitest.ci.config.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-10
+// Last Update : 2026-01-10
+
+// Description:
+// - Vitest configuration optimized for CI/CD environments
+// - Single-fork execution for enhanced stability
+// - JUnit reporting for CI integration
+// - Retry logic for handling flaky tests
+
+// Notes:
+// - Parallel execution disabled (singleFork: true) for CI stability
+// - Extended timeouts (30s test, 15s hook) for CI environments
+// - JUnit output: ./test-results/junit.xml
+// - Retry count: 2 attempts for flaky tests
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { defineConfig } from 'vitest/config';
 
+//----------------------------------------------------
+// 2. Configuration
+//----------------------------------------------------
 export default defineConfig({
   test: {
     environment: 'node',
@@ -8,11 +34,11 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: {
       forks: {
-        singleFork: true, // Disable parallel execution for CI stability
+        singleFork: true,
       },
     },
-    testTimeout: 30000, // Increased timeout for CI stability
-    hookTimeout: 15000, // Increased hook timeout for CI
+    testTimeout: 30000,
+    hookTimeout: 15000,
     setupFiles: ['tests/setup.ts'],
     reporters: ['verbose', 'junit'],
     outputFile: {
@@ -22,17 +48,12 @@ export default defineConfig({
       NODE_ENV: 'test',
       CI: 'true',
       DOTENV_CONFIG_QUIET: 'true',
-      // Add retry configuration for auth
       TEST_RETRY_COUNT: '3',
       TEST_RETRY_DELAY: '1000',
     },
-    // Optimize for CI
     maxConcurrency: 1,
-    // Reduce memory usage
     isolate: true,
-    // Don't fail fast - let more tests run to see all issues
     bail: 0,
-    // Add retry logic for flaky tests
     retry: 2,
   },
 });

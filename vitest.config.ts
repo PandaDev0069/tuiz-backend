@@ -32,14 +32,14 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: {
       forks: {
-        singleFork: false, // Enable parallel execution
+        singleFork: false,
       },
     },
-    testTimeout: 30000, // Increase timeout for Supabase operations
-    hookTimeout: 30000, // Increase hook timeout for integration tests
+    testTimeout: 30000,
+    hookTimeout: 30000,
     env: {
       NODE_ENV: 'test',
-      DOTENV_CONFIG_QUIET: 'true', // Suppress dotenv informational messages
+      DOTENV_CONFIG_QUIET: 'true',
     },
   },
 });
