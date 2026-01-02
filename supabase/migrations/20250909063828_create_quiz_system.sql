@@ -512,14 +512,8 @@ CREATE TRIGGER on_answers_updated
 -- ============================================================================
 
 -- Create quiz images storage bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'quiz-images',
-    'quiz-images',
-    true, -- Public read access for quiz images
-    10485760, -- 10MB limit for quiz images
-    ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']
-)
+INSERT INTO storage.buckets (id, name)
+VALUES ('quiz-images', 'quiz-images')
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================

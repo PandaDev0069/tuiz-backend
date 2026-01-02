@@ -120,3 +120,24 @@ export const questionRateLimit = createRateLimit({
   max: 25, // Limit each IP to 25 question operations per windowMs
   message: 'Too many question operations, please try again later.',
 });
+
+// Rate limiter for game flow operations (real-time gameplay)
+export const gameFlowRateLimit = createRateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 100, // Limit each IP to 100 game flow operations per 5 minutes (high frequency for real-time)
+  message: 'Too many game flow operations, please slow down.',
+});
+
+// Rate limiter for WebSocket connection queries
+export const websocketQueryRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // Limit each IP to 50 connection queries per windowMs
+  message: 'Too many WebSocket connection queries, please try again later.',
+});
+
+// Rate limiter for device session operations
+export const deviceSessionRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 40, // Limit each IP to 40 device session operations per windowMs
+  message: 'Too many device session operations, please try again later.',
+});

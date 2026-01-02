@@ -13,6 +13,26 @@ function hostnameOf(origin: string): string {
 function originAllowed(origin: string, allowedList: string[]): boolean {
   const host = hostnameOf(origin);
 
+  // In development, allow local network IPs (192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+  if (process.env.NODE_ENV !== 'production') {
+    const localNetworkPatterns = [
+      /^192\.168\.\d{1,3}\.\d{1,3}$/, // 192.168.x.x
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, // 10.x.x.x
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/, // 172.16-31.x.x
+      'localhost',
+      '127.0.0.1',
+    ];
+
+    for (const pattern of localNetworkPatterns) {
+      if (typeof pattern === 'string' && host === pattern) {
+        return true;
+      }
+      if (pattern instanceof RegExp && pattern.test(host)) {
+        return true;
+      }
+    }
+  }
+
   for (const a of allowedList) {
     if (!a) continue;
     if (a === '*') return true;

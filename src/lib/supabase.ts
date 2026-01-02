@@ -130,6 +130,62 @@ export interface Database {
           updated_at?: string;
         };
       };
+      websocket_connections: {
+        Row: {
+          id: string;
+          device_id: string;
+          user_id: string | null;
+          socket_id: string;
+          status: 'active' | 'disconnected' | 'timeout';
+          connected_at: string;
+          disconnected_at: string | null;
+          metadata: Record<string, unknown>;
+        };
+        Insert: {
+          id?: string;
+          device_id: string;
+          user_id?: string | null;
+          socket_id: string;
+          status?: 'active' | 'disconnected' | 'timeout';
+          connected_at?: string;
+          disconnected_at?: string | null;
+          metadata?: Record<string, unknown>;
+        };
+        Update: {
+          status?: 'active' | 'disconnected' | 'timeout';
+          disconnected_at?: string | null;
+          metadata?: Record<string, unknown>;
+        };
+      };
+      device_sessions: {
+        Row: {
+          id: string;
+          device_id: string;
+          user_id: string | null;
+          last_socket_id: string | null;
+          first_seen: string;
+          last_seen: string;
+          reconnect_count: number;
+          metadata: Record<string, unknown>;
+        };
+        Insert: {
+          id?: string;
+          device_id: string;
+          user_id?: string | null;
+          last_socket_id?: string | null;
+          first_seen?: string;
+          last_seen?: string;
+          reconnect_count?: number;
+          metadata?: Record<string, unknown>;
+        };
+        Update: {
+          user_id?: string | null;
+          last_socket_id?: string | null;
+          last_seen?: string;
+          reconnect_count?: number;
+          metadata?: Record<string, unknown>;
+        };
+      };
     };
     Functions: {
       generate_quiz_code: {
@@ -157,6 +213,19 @@ export interface Database {
           quiz_settings: Record<string, unknown>;
           questions: Record<string, unknown>;
         }[];
+      };
+      update_device_session: {
+        Args: {
+          p_device_id: string;
+          p_user_id: string | null;
+          p_socket_id: string;
+          p_metadata: Record<string, unknown>;
+        };
+        Returns: string;
+      };
+      get_device_reconnect_count: {
+        Args: { p_device_id: string };
+        Returns: number;
       };
     };
     Enums: {

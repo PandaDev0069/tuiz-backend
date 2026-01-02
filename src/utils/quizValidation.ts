@@ -252,8 +252,8 @@ function validateQuestionTiming(data: Record<string, unknown>): string[] {
 function validateQuestionPoints(points: unknown): string[] {
   const errors: string[] = [];
 
-  if ((points as number) < 1 || (points as number) > 100) {
-    errors.push('Points must be between 1 and 100');
+  if ((points as number) < 1 || (points as number) > 300) {
+    errors.push('Points must be between 1 and 300');
   }
 
   return errors;

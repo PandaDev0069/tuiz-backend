@@ -3,6 +3,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { createApp } from './app';
 import { env, isProd, getAllowedOrigins } from './config/env';
+import { WebSocketEvents, ServerEvents, initializeWebSocketManager } from './services/websocket';
 import { logger } from './utils/logger';
 
 // CORS helper functions (same logic as cors.ts)
@@ -39,12 +40,28 @@ function originAllowed(origin: string, allowedList: string[]): boolean {
 
 const app = createApp();
 const server = http.createServer(app);
-const io = new SocketIOServer(server, {
+const io = new SocketIOServer<WebSocketEvents, ServerEvents>(server, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true); // Same-origin requests
 
       const allowed = getAllowedOrigins();
+
+      // In development, also allow local network IPs for WebSocket connections
+      if (process.env.NODE_ENV !== 'production') {
+        const host = hostnameOf(origin);
+        const localNetworkPatterns = [
+          /^192\.168\.\d{1,3}\.\d{1,3}$/, // 192.168.x.x
+          /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/, // 10.x.x.x
+          /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}$/, // 172.16-31.x.x
+        ];
+
+        for (const pattern of localNetworkPatterns) {
+          if (pattern.test(host)) {
+            return callback(null, true);
+          }
+        }
+      }
 
       if (originAllowed(origin, allowed)) {
         return callback(null, true);
@@ -57,17 +74,17 @@ const io = new SocketIOServer(server, {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   },
+  pingInterval: 25000,
+  pingTimeout: 20000,
 });
 
-io.on('connection', (socket) => {
-  logger.info('socket.io connected');
-  socket.emit('server:hello');
-  socket.on('client:hello', () => {
-    logger.info('client greeted');
-  });
-});
+// Initialize WebSocket Manager
+initializeWebSocketManager(io);
 
-server.listen(env.PORT, () => {
-  const host = isProd ? '0.0.0.0' : 'localhost';
+// Bind to 0.0.0.0 to allow connections from local network devices
+const host = '0.0.0.0';
+server.listen(env.PORT, host, () => {
   logger.info(`api listening on http://${host}:${env.PORT} (${isProd ? 'prod' : 'dev'})`);
+  logger.info(`Accessible on localhost: http://localhost:${env.PORT}`);
+  logger.info(`Accessible on network: http://<your-ip>:${env.PORT}`);
 });

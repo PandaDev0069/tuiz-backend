@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **Function Search Path Security Fix** (2025-11-12)
+  - Fixed search_path mutable warnings for three database functions
+  - Added `SET search_path = ''` to prevent privilege escalation attacks
+  - Functions fixed: `update_updated_at_column`, `update_game_player_count`, `get_game_leaderboard`
+  - Migration: `20251112030153_fix_function_search_path_security.sql`
+  - Reference: [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable)
+
 ### Added
 
 - **Quiz Image Cleanup Migration** (2025-01-15)
