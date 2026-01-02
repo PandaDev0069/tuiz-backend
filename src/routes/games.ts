@@ -2,9 +2,9 @@ import express from 'express';
 import { ZodError } from 'zod';
 import { supabaseAdmin, incrementQuizPlayCount } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
-import { wsManager } from '../server';
 import { gameFlowService } from '../services/gameFlowService';
 import { playerService } from '../services/playerService';
+import { requireWebSocketManager } from '../services/websocket';
 import { AuthenticatedRequest } from '../types/auth';
 import { CreateGameSchema, GameStatus } from '../types/game';
 import { logger } from '../utils/logger';
@@ -382,6 +382,7 @@ router.delete(
       }
 
       // Emit WebSocket event to notify all clients in the room
+      const wsManager = requireWebSocketManager();
       wsManager.broadcastToRoom(gameId, 'game:player-kicked', {
         player_id: playerId,
         player_name: player.player_name,

@@ -3,7 +3,7 @@ import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import { createApp } from './app';
 import { env, isProd, getAllowedOrigins } from './config/env';
-import { WebSocketManager, WebSocketEvents, ServerEvents } from './services/websocket';
+import { WebSocketEvents, ServerEvents, initializeWebSocketManager } from './services/websocket';
 import { logger } from './utils/logger';
 
 // CORS helper functions (same logic as cors.ts)
@@ -79,10 +79,7 @@ const io = new SocketIOServer<WebSocketEvents, ServerEvents>(server, {
 });
 
 // Initialize WebSocket Manager
-const wsManager = new WebSocketManager(io);
-
-// Export for potential use in routes
-export { wsManager };
+initializeWebSocketManager(io);
 
 // Bind to 0.0.0.0 to allow connections from local network devices
 const host = '0.0.0.0';

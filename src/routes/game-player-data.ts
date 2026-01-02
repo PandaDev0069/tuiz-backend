@@ -2,8 +2,8 @@
 import express from 'express';
 import { ZodError } from 'zod';
 import { authMiddleware } from '../middleware/auth';
-import { wsManager } from '../server';
 import { gamePlayerDataService } from '../services/gamePlayerDataService';
+import { requireWebSocketManager } from '../services/websocket';
 import { AuthenticatedRequest } from '../types/auth';
 import {
   CreateGamePlayerDataSchema,
@@ -74,6 +74,7 @@ router.post('/:gameId/players/:playerId/answer', async (req, res) => {
   const requestId = req.headers['x-request-id'] as string;
   const { gameId, playerId } = req.params;
   // IMPORTANT: bind to preserve `this` inside WebSocketManager (otherwise `this` becomes undefined)
+  const wsManager = requireWebSocketManager();
   const broadcast = wsManager.broadcastToRoom.bind(wsManager) as (
     roomId: string,
     event: string,

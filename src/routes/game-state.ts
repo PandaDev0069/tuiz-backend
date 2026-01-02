@@ -3,8 +3,8 @@ import type { Request, Response } from 'express';
 
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
-import { wsManager } from '../server';
 import { gameFlowService } from '../services/gameFlowService';
+import { requireWebSocketManager } from '../services/websocket';
 import type { AuthenticatedRequest } from '../types/auth';
 import { logger } from '../utils/logger';
 
@@ -237,6 +237,7 @@ router.post(
         .eq('id', gameId);
 
       // Emit WebSocket event with server timestamps
+      const wsManager = requireWebSocketManager();
       const startsAt = serverTime.getTime();
       const endsAt = serverTime.getTime() + durationMs;
       wsManager.broadcastToRoom(gameId, 'game:question:started', {
@@ -366,6 +367,7 @@ router.post(
 
       // Emit WebSocket events
       try {
+        const wsManager = requireWebSocketManager();
         // Emit question ended event
         wsManager.broadcastToRoom(gameId, 'game:question:ended', {
           roomId: gameId,
@@ -511,6 +513,7 @@ router.post(
       const showExplanationTime = question.show_explanation_time || 10;
 
       // Emit WebSocket event to show explanation
+      const wsManager = requireWebSocketManager();
       wsManager.broadcastToRoom(gameId, 'game:explanation:show', {
         roomId: gameId,
         questionId: currentQuestionId,
@@ -589,6 +592,7 @@ router.post(
       }
 
       // Emit WebSocket event to hide explanation
+      const wsManager = requireWebSocketManager();
       wsManager.broadcastToRoom(gameId, 'game:explanation:hide', {
         roomId: gameId,
         questionId: currentQuestionId,
@@ -764,6 +768,7 @@ router.post(
           .eq('id', gameId);
 
         // Emit game end event via phase change
+        const wsManager = requireWebSocketManager();
         wsManager.broadcastPhaseChange(gameId, 'ended');
 
         logger.info(
@@ -807,6 +812,7 @@ router.post(
         .eq('id', gameId);
 
       // Emit phase change to countdown (with proper startedAt handling)
+      const wsManager = requireWebSocketManager();
       wsManager.broadcastPhaseChange(gameId, 'countdown');
 
       logger.info(
