@@ -1,3 +1,21 @@
+# ====================================================
+# File Name   : .editorconfig
+# Project     : TUIZ
+# Author      : PandaDev0069 / Panta Aashish
+# Created     : 2025-08-19
+# Last Update : 2025-08-19
+#
+# Description:
+# - EditorConfig for consistent coding styles across editors
+# - Enforces UTF-8, LF line endings, and 2-space indentation
+# - Applied automatically by supported editors (VS Code, JetBrains, etc.)
+#
+# Notes:
+# - Trim trailing whitespace disabled for Markdown files
+# - All text files get final newline
+# - Root configuration for entire project
+# ====================================================
+
 root = true
 
 [*]
