@@ -1,16 +1,34 @@
-// src/types/websocket.ts
+// ====================================================
+// File Name   : websocket.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-11
+
+// Description:
+// - WebSocket connection and device session type definitions
+// - Zod validation schemas for WebSocket API endpoints
+// - Database-aligned interfaces for real-time connection tracking
+
+// Notes:
+// - ConnectionStatus: 'active' | 'disconnected' | 'timeout'
+// - Tracks reconnection count and heartbeat timestamps
+// - Supports browser fingerprinting for device identification
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-// ============================================================================
-// ENUMS (matching database)
-// ============================================================================
-
+//----------------------------------------------------
+// 2. Type Definitions
+//----------------------------------------------------
 export type ConnectionStatus = 'active' | 'disconnected' | 'timeout';
 
-// ============================================================================
-// INTERFACES (matching database schema)
-// ============================================================================
-
+//----------------------------------------------------
+// 3. Core Interfaces
+//----------------------------------------------------
 export interface WebSocketConnection {
   id: string;
   socket_id: string;
@@ -38,11 +56,9 @@ export interface DeviceSession {
   metadata: Record<string, unknown>;
 }
 
-// ============================================================================
-// REQUEST SCHEMAS & TYPES
-// ============================================================================
-
-// Get WebSocket connections (query filters)
+//----------------------------------------------------
+// 4. Request Validation Schemas
+//----------------------------------------------------
 export const GetWebSocketConnectionsSchema = z.object({
   device_id: z.string().optional(),
   user_id: z.string().uuid().optional(),
@@ -53,14 +69,12 @@ export const GetWebSocketConnectionsSchema = z.object({
 
 export type GetWebSocketConnectionsQuery = z.infer<typeof GetWebSocketConnectionsSchema>;
 
-// Get Device session query
 export const GetDeviceSessionSchema = z.object({
   device_id: z.string(),
 });
 
 export type GetDeviceSessionQuery = z.infer<typeof GetDeviceSessionSchema>;
 
-// Get Device sessions (query filters)
 export const GetDeviceSessionsSchema = z.object({
   user_id: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -69,7 +83,6 @@ export const GetDeviceSessionsSchema = z.object({
 
 export type GetDeviceSessionsQuery = z.infer<typeof GetDeviceSessionsSchema>;
 
-// Update Device session metadata
 export const UpdateDeviceSessionSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   browser_fingerprint: z.string().optional(),
@@ -77,10 +90,9 @@ export const UpdateDeviceSessionSchema = z.object({
 
 export type UpdateDeviceSessionRequest = z.infer<typeof UpdateDeviceSessionSchema>;
 
-// ============================================================================
-// RESPONSE INTERFACES
-// ============================================================================
-
+//----------------------------------------------------
+// 5. Response Interfaces
+//----------------------------------------------------
 export interface WebSocketConnectionsResponse {
   connections: WebSocketConnection[];
   total: number;
