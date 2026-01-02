@@ -1,6 +1,24 @@
-// src/types/supabase.ts
-// Type definitions for Supabase operations to avoid 'any' types
+// ====================================================
+// File Name   : supabase.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-10
+// Last Update : 2025-09-10
 
+// Description:
+// - Type definitions for Supabase client operations
+// - Provides type-safe wrappers for Supabase query builders
+// - Eliminates 'any' types in database operations
+
+// Notes:
+// - Covers select, insert, update, delete operations
+// - Supports chained query methods (eq, or, order, range)
+// - Includes RPC function call types
+// ====================================================
+
+//----------------------------------------------------
+// 1. Query Builder Types
+//----------------------------------------------------
 export interface SupabaseQueryBuilder {
   eq: (column: string, value: unknown) => SupabaseQueryBuilder;
   or: (filter: string) => SupabaseQueryBuilder;
@@ -17,12 +35,18 @@ export interface SupabaseResponse {
   count?: number;
 }
 
+//----------------------------------------------------
+// 2. Insert Builder Types
+//----------------------------------------------------
 export interface SupabaseInsertBuilder {
   select: (columns?: string) => {
     single: () => Promise<SupabaseResponse>;
   };
 }
 
+//----------------------------------------------------
+// 3. Update Builder Types
+//----------------------------------------------------
 export interface SupabaseUpdateBuilder {
   eq: (
     column: string,
@@ -42,6 +66,9 @@ export interface SupabaseUpdateBuilder {
   };
 }
 
+//----------------------------------------------------
+// 4. Delete Builder Types
+//----------------------------------------------------
 export interface SupabaseDeleteBuilder {
   eq: (
     column: string,
@@ -51,6 +78,9 @@ export interface SupabaseDeleteBuilder {
   };
 }
 
+//----------------------------------------------------
+// 5. Client Interface
+//----------------------------------------------------
 export interface SupabaseTable {
   select: (columns?: string, options?: { count?: string }) => SupabaseQueryBuilder;
   insert: (data: unknown) => SupabaseInsertBuilder;
