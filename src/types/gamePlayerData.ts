@@ -1,9 +1,29 @@
-// src/types/gamePlayerData.ts
+// ====================================================
+// File Name   : gamePlayerData.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-30
+
+// Description:
+// - Game player data and leaderboard type definitions
+// - Tracks answers, scores, streaks, and timing statistics
+// - Real-time leaderboard with rank change tracking
+
+// Notes:
+// - Answer reports stored as JSONB in database
+// - Rank history tracks position changes per question
+// - Max 200 leaderboard entries per query
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 
-/**
- * Answer report structure stored in jsonb
- */
+//----------------------------------------------------
+// 2. Core Interfaces
+//----------------------------------------------------
 export interface AnswerReport {
   total_answers: number;
   correct_answers: number;
@@ -26,9 +46,8 @@ export interface AnswerReport {
     fastest_response: number;
     slowest_response: number;
   };
-  // Rank tracking for leaderboard changes
-  previous_rank?: number; // Rank before last score update
-  current_rank?: number; // Current rank
+  previous_rank?: number;
+  current_rank?: number;
   rank_history?: Array<{
     question_number: number;
     rank: number;
@@ -38,63 +57,6 @@ export interface AnswerReport {
   }>;
 }
 
-/**
- * Zod schema for creating game player data
- */
-export const CreateGamePlayerDataSchema = z.object({
-  player_id: z.string().uuid('Invalid player ID'),
-  player_device_id: z.string().min(1, 'Player device ID is required').max(100),
-  game_id: z.string().uuid('Invalid game ID'),
-  score: z.number().int().min(0, 'Score must be non-negative').optional().default(0),
-  answer_report: z
-    .object({
-      total_answers: z.number().int().min(0).optional().default(0),
-      correct_answers: z.number().int().min(0).optional().default(0),
-      incorrect_answers: z.number().int().min(0).optional().default(0),
-      questions: z.array(z.any()).optional().default([]),
-      streaks: z.any().optional(),
-      timing: z.any().optional(),
-    })
-    .optional()
-    .default({
-      total_answers: 0,
-      correct_answers: 0,
-      incorrect_answers: 0,
-      questions: [],
-    }),
-});
-
-export type CreateGamePlayerDataInput = z.infer<typeof CreateGamePlayerDataSchema>;
-
-/**
- * Zod schema for updating game player data
- */
-export const UpdateGamePlayerDataSchema = z.object({
-  score: z.number().int().min(0, 'Score must be non-negative').optional(),
-  answer_report: z.record(z.string(), z.unknown()).optional(),
-});
-
-export type UpdateGamePlayerDataInput = z.infer<typeof UpdateGamePlayerDataSchema>;
-
-/**
- * Zod schema for submitting an answer
- */
-export const SubmitAnswerSchema = z.object({
-  question_id: z.string().uuid('Invalid question ID'),
-  question_number: z.number().int().min(1),
-  answer_id: z.string().uuid('Invalid answer ID').nullable(),
-  // Client-sent correctness is ignored; kept for backward compatibility
-  is_correct: z.boolean().optional(),
-  time_taken: z.number().min(0, 'Time taken must be non-negative'),
-  // Client-sent points are ignored; backend will compute
-  points_earned: z.number().int().min(0, 'Points must be non-negative').optional().default(0),
-});
-
-export type SubmitAnswerInput = z.infer<typeof SubmitAnswerSchema>;
-
-/**
- * Game player data database interface
- */
 export interface GamePlayerData {
   id: string;
   player_id: string;
@@ -102,22 +64,19 @@ export interface GamePlayerData {
   game_id: string;
   score: number;
   answer_report: AnswerReport;
-  created_at: string; // ISO timestamp
-  updated_at: string; // ISO timestamp
+  created_at: string;
+  updated_at: string;
 }
 
-/**
- * Leaderboard entry with player info
- */
 export interface LeaderboardEntry {
   player_id: string;
   player_name: string;
   device_id: string;
   score: number;
   rank: number;
-  previous_rank?: number; // Rank before last update
-  rank_change?: 'up' | 'down' | 'same'; // Rank change direction
-  score_change?: number; // Points added in last question
+  previous_rank?: number;
+  rank_change?: 'up' | 'down' | 'same';
+  score_change?: number;
   total_answers: number;
   correct_answers: number;
   accuracy: number;
@@ -125,19 +84,6 @@ export interface LeaderboardEntry {
   is_logged_in: boolean;
 }
 
-/**
- * Query parameters for leaderboard
- */
-export const LeaderboardQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(500).optional().default(100),
-  offset: z.coerce.number().int().min(0).optional().default(0),
-});
-
-export type LeaderboardQuery = z.infer<typeof LeaderboardQuerySchema>;
-
-/**
- * Leaderboard response
- */
 export interface LeaderboardResponse {
   game_id: string;
   entries: LeaderboardEntry[];
@@ -147,9 +93,6 @@ export interface LeaderboardResponse {
   updated_at: string;
 }
 
-/**
- * Player statistics summary
- */
 export interface PlayerStats {
   player_id: string;
   player_name: string;
@@ -173,11 +116,61 @@ export interface PlayerStats {
   }>;
 }
 
-/**
- * Error types for game player data operations
- */
 export interface GamePlayerDataError {
   error: string;
   message: string;
   requestId?: string;
 }
+
+//----------------------------------------------------
+// 3. Validation Schemas
+//----------------------------------------------------
+export const CreateGamePlayerDataSchema = z.object({
+  player_id: z.string().uuid('Invalid player ID'),
+  player_device_id: z.string().min(1, 'Player device ID is required').max(100),
+  game_id: z.string().uuid('Invalid game ID'),
+  score: z.number().int().min(0, 'Score must be non-negative').optional().default(0),
+  answer_report: z
+    .object({
+      total_answers: z.number().int().min(0).optional().default(0),
+      correct_answers: z.number().int().min(0).optional().default(0),
+      incorrect_answers: z.number().int().min(0).optional().default(0),
+      questions: z.array(z.any()).optional().default([]),
+      streaks: z.any().optional(),
+      timing: z.any().optional(),
+    })
+    .optional()
+    .default({
+      total_answers: 0,
+      correct_answers: 0,
+      incorrect_answers: 0,
+      questions: [],
+    }),
+});
+
+export const UpdateGamePlayerDataSchema = z.object({
+  score: z.number().int().min(0, 'Score must be non-negative').optional(),
+  answer_report: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const SubmitAnswerSchema = z.object({
+  question_id: z.string().uuid('Invalid question ID'),
+  question_number: z.number().int().min(1),
+  answer_id: z.string().uuid('Invalid answer ID').nullable(),
+  is_correct: z.boolean().optional(),
+  time_taken: z.number().min(0, 'Time taken must be non-negative'),
+  points_earned: z.number().int().min(0, 'Points must be non-negative').optional().default(0),
+});
+
+export const LeaderboardQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional().default(100),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
+//----------------------------------------------------
+// 4. Type Exports
+//----------------------------------------------------
+export type CreateGamePlayerDataInput = z.infer<typeof CreateGamePlayerDataSchema>;
+export type UpdateGamePlayerDataInput = z.infer<typeof UpdateGamePlayerDataSchema>;
+export type SubmitAnswerInput = z.infer<typeof SubmitAnswerSchema>;
+export type LeaderboardQuery = z.infer<typeof LeaderboardQuerySchema>;
