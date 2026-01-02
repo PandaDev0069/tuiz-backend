@@ -1,11 +1,30 @@
-// src/types/quiz-library.ts
+// ====================================================
+// File Name   : quiz-library.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-17
+// Last Update : 2025-09-17
+
+// Description:
+// - Quiz library and discovery type definitions
+// - Public quiz browsing and filtering interfaces
+// - Japanese-localized sort and difficulty options
+
+// Notes:
+// - Max 50 items per page for library queries
+// - Includes clone quiz functionality
+// - Sort options: updated_desc, created_desc, plays_desc, questions_desc, title_asc
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { z } from 'zod';
 import { QuizSetResponse, DifficultyLevel } from './quiz';
 
-// ============================================================================
-// QUIZ LIBRARY SPECIFIC TYPES
-// ============================================================================
-
+//----------------------------------------------------
+// 2. Request Interfaces
+//----------------------------------------------------
 export interface PublicQuizBrowseRequest {
   page?: number;
   limit?: number;
@@ -25,16 +44,6 @@ export interface MyLibraryRequest {
   limit?: number;
 }
 
-export interface CloneQuizResponse {
-  clonedQuiz: QuizSetResponse;
-  message: string;
-  originalQuiz: {
-    id: string;
-    title: string;
-    author: string;
-  };
-}
-
 export interface LibraryFilters {
   category: string;
   difficulty: string;
@@ -45,7 +54,9 @@ export interface LibraryFilters {
   playCount?: 'low' | 'medium' | 'high' | 'all';
 }
 
-// Enhanced quiz response with author information for public browsing
+//----------------------------------------------------
+// 3. Response Interfaces
+//----------------------------------------------------
 export interface PublicQuizResponse extends QuizSetResponse {
   author: {
     id: string;
@@ -56,11 +67,25 @@ export interface PublicQuizResponse extends QuizSetResponse {
   recent_plays?: number;
 }
 
-// ============================================================================
-// VALIDATION SCHEMAS
-// ============================================================================
+export interface CloneQuizResponse {
+  clonedQuiz: QuizSetResponse;
+  message: string;
+  originalQuiz: {
+    id: string;
+    title: string;
+    author: string;
+  };
+}
 
-// Public quiz browse validation
+export interface LibraryError {
+  error: string;
+  message: string;
+  code?: string;
+}
+
+//----------------------------------------------------
+// 4. Validation Schemas
+//----------------------------------------------------
 export const PublicQuizBrowseSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -73,7 +98,6 @@ export const PublicQuizBrowseSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-// My library request validation
 export const MyLibrarySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -85,33 +109,20 @@ export const MyLibrarySchema = z.object({
     .default('updated_desc'),
 });
 
-// Clone quiz validation (just quiz ID in params)
 export const CloneQuizSchema = z.object({
   quizId: z.string().uuid(),
 });
 
-// ============================================================================
-// ERROR TYPES
-// ============================================================================
-
-export interface LibraryError {
-  error: string;
-  message: string;
-  code?: string;
-}
-
-// ============================================================================
-// TYPE EXPORTS
-// ============================================================================
-
+//----------------------------------------------------
+// 5. Type Exports
+//----------------------------------------------------
 export type PublicQuizBrowseInput = z.infer<typeof PublicQuizBrowseSchema>;
 export type MyLibraryInput = z.infer<typeof MyLibrarySchema>;
 export type CloneQuizInput = z.infer<typeof CloneQuizSchema>;
 
-// ============================================================================
-// QUIZ DISCOVERY CATEGORIES
-// ============================================================================
-
+//----------------------------------------------------
+// 6. Constants
+//----------------------------------------------------
 export const QUIZ_CATEGORIES = [
   'general',
   'science',
@@ -137,10 +148,6 @@ export const QUIZ_CATEGORIES = [
 
 export type QuizCategory = (typeof QUIZ_CATEGORIES)[number];
 
-// ============================================================================
-// SORT OPTIONS WITH JAPANESE LABELS
-// ============================================================================
-
 export const SORT_OPTIONS = {
   updated_desc: { label: '更新が新しい', field: 'updated_at', order: 'desc' },
   created_desc: { label: '作成が新しい', field: 'created_at', order: 'desc' },
@@ -148,10 +155,6 @@ export const SORT_OPTIONS = {
   questions_desc: { label: '問題数(多い順)', field: 'total_questions', order: 'desc' },
   title_asc: { label: 'タイトル(A→Z)', field: 'title', order: 'asc' },
 } as const;
-
-// ============================================================================
-// DIFFICULTY OPTIONS WITH JAPANESE LABELS
-// ============================================================================
 
 export const DIFFICULTY_OPTIONS = {
   easy: { label: '簡単', color: 'green' },
