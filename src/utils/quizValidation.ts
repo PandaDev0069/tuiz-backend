@@ -1,14 +1,47 @@
-// src/utils/quizValidation.ts
+// ====================================================
+// File Name   : quizValidation.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-10
+// Last Update : 2026-01-03
+
+// Description:
+// - Comprehensive validation utilities for quiz CRUD operations
+// - Zod-based middleware for request and query parameter validation
+// - Domain-specific validators for quiz, question, and answer data
+
+// Notes:
+// - Validates quiz codes (6-digit numbers: 100000-999999)
+// - Enforces answer limits (2-4 answers per question)
+// - Points range: 1-300 per question
+// - Max players: 1-200 per quiz
+// - Prevents object injection in error formatting
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { Request, Response, NextFunction } from 'express';
 import { ZodType, ZodError } from 'zod';
 import { AuthenticatedRequest } from '../types/auth';
 import { QuizError } from '../types/quiz';
 import { logger } from './logger';
 
-// ============================================================================
-// VALIDATION MIDDLEWARE
-// ============================================================================
-
+//----------------------------------------------------
+// 2. Validation Middleware
+//----------------------------------------------------
+/**
+ * Function: validateRequest
+ * Description:
+ * - Generic Zod validation middleware for request body
+ * - Replaces req.body with validated data on success
+ *
+ * Parameters:
+ * - schema (ZodType<T>): Zod schema to validate against
+ *
+ * Returns:
+ * - Express middleware function
+ */
 export function validateRequest<T>(schema: ZodType<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -25,7 +58,6 @@ export function validateRequest<T>(schema: ZodType<T>) {
         } as QuizError);
       }
 
-      // Replace req.body with validated data
       req.body = result.data;
       next();
     } catch (error) {
@@ -38,10 +70,21 @@ export function validateRequest<T>(schema: ZodType<T>) {
   };
 }
 
-// ============================================================================
-// QUERY PARAMETER VALIDATION
-// ============================================================================
-
+//----------------------------------------------------
+// 3. Query Parameter Validation
+//----------------------------------------------------
+/**
+ * Function: validateQueryParams
+ * Description:
+ * - Generic Zod validation middleware for query parameters
+ * - Stores validated data in custom request property
+ *
+ * Parameters:
+ * - schema (ZodType<T>): Zod schema to validate against
+ *
+ * Returns:
+ * - Express middleware function
+ */
 export function validateQueryParams<T>(schema: ZodType<T>) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -58,7 +101,6 @@ export function validateQueryParams<T>(schema: ZodType<T>) {
         } as QuizError);
       }
 
-      // Store validated data in a custom property
       (req as AuthenticatedRequest).validatedQuery = result.data as Record<
         string,
         string | string[] | undefined
@@ -81,37 +123,42 @@ export function validateQueryParams<T>(schema: ZodType<T>) {
   };
 }
 
-// ============================================================================
-// ERROR FORMATTING
-// ============================================================================
-
+//----------------------------------------------------
+// 4. Error Formatting Helpers
+//----------------------------------------------------
+/**
+ * Function: formatZodError
+ * Description:
+ * - Converts Zod validation errors to flat key-value object
+ * - Uses Object.assign to prevent object injection
+ *
+ * Parameters:
+ * - error (ZodError): Zod validation error object
+ *
+ * Returns:
+ * - Record<string, string>: Formatted error messages by field path
+ */
 export function formatZodError(error: ZodError): Record<string, string> {
   const formatted: Record<string, string> = {};
 
   error.issues.forEach((err) => {
     const path = err.path.join('.');
-    // Use Object.assign to avoid object injection
     Object.assign(formatted, { [path]: err.message });
   });
 
   return formatted;
 }
 
-// ============================================================================
-// CUSTOM VALIDATION FUNCTIONS
-// ============================================================================
-
-export function validateQuizCode(code: number): boolean {
-  return code >= 100000 && code <= 999999;
-}
-
+//----------------------------------------------------
+// 5. Answer Validation Functions
+//----------------------------------------------------
 export function validateQuestionAnswers(answers: Array<{ is_correct: boolean }>): boolean {
   if (answers.length < 2 || answers.length > 4) {
     return false;
   }
 
   const correctAnswers = answers.filter((answer) => answer.is_correct);
-  return correctAnswers.length === 1; // Must have exactly one correct answer
+  return correctAnswers.length === 1;
 }
 
 export function validateTrueFalseAnswers(answers: Array<{ is_correct: boolean }>): boolean {
@@ -120,7 +167,7 @@ export function validateTrueFalseAnswers(answers: Array<{ is_correct: boolean }>
   }
 
   const correctAnswers = answers.filter((answer) => answer.is_correct);
-  return correctAnswers.length === 1; // Must have exactly one correct answer
+  return correctAnswers.length === 1;
 }
 
 export function validateMultipleChoiceAnswers(answers: Array<{ is_correct: boolean }>): boolean {
@@ -129,12 +176,15 @@ export function validateMultipleChoiceAnswers(answers: Array<{ is_correct: boole
   }
 
   const correctAnswers = answers.filter((answer) => answer.is_correct);
-  return correctAnswers.length === 1; // Must have exactly one correct answer
+  return correctAnswers.length === 1;
 }
 
-// ============================================================================
-// VALIDATION HELPERS
-// ============================================================================
+//----------------------------------------------------
+// 6. Basic Field Validators
+//----------------------------------------------------
+export function validateQuizCode(code: number): boolean {
+  return code >= 100000 && code <= 999999;
+}
 
 export function validateImageUrl(url: string): boolean {
   try {
@@ -161,42 +211,47 @@ export function validateDescription(description: string): boolean {
   return description.length >= 1 && description.length <= 500;
 }
 
-// ============================================================================
-// COMPREHENSIVE QUIZ VALIDATION
-// ============================================================================
-
+//----------------------------------------------------
+// 7. Quiz Set Validation
+//----------------------------------------------------
+/**
+ * Function: validateQuizSetData
+ * Description:
+ * - Validates complete quiz set data including metadata and play settings
+ * - Checks title, description, category, tags, thumbnail, and play settings
+ *
+ * Parameters:
+ * - data (Record<string, unknown>): Quiz set data to validate
+ *
+ * Returns:
+ * - Object: { isValid: boolean, errors: string[] }
+ */
 export function validateQuizSetData(data: Record<string, unknown>): {
   isValid: boolean;
   errors: string[];
 } {
   const errors: string[] = [];
 
-  // Validate title
   if (!validateTitle(data.title as string)) {
     errors.push('Title must be between 1 and 100 characters');
   }
 
-  // Validate description
   if (!validateDescription(data.description as string)) {
     errors.push('Description must be between 1 and 500 characters');
   }
 
-  // Validate category
   if (!validateCategory(data.category as string)) {
     errors.push('Category must be between 1 and 50 characters');
   }
 
-  // Validate tags
   if (!validateTags(data.tags as string[])) {
     errors.push('Tags must be between 1 and 10 items, each 1-30 characters');
   }
 
-  // Validate thumbnail URL if provided
   if (data.thumbnail_url && !validateImageUrl(data.thumbnail_url as string)) {
     errors.push('Invalid thumbnail URL format');
   }
 
-  // Validate play settings
   if (data.play_settings) {
     const playSettings = data.play_settings as Record<string, unknown>;
     if (playSettings.code && !validateQuizCode(playSettings.code as number)) {
@@ -205,9 +260,9 @@ export function validateQuizSetData(data: Record<string, unknown>): {
 
     if (
       playSettings.max_players &&
-      ((playSettings.max_players as number) < 1 || (playSettings.max_players as number) > 400)
+      ((playSettings.max_players as number) < 1 || (playSettings.max_players as number) > 200)
     ) {
-      errors.push('Max players must be between 1 and 400');
+      errors.push('Max players must be between 1 and 200');
     }
   }
 
@@ -217,6 +272,9 @@ export function validateQuizSetData(data: Record<string, unknown>): {
   };
 }
 
+//----------------------------------------------------
+// 8. Question Validation Helpers
+//----------------------------------------------------
 function validateQuestionText(questionText: unknown): string[] {
   const errors: string[] = [];
 
@@ -318,22 +376,25 @@ function validateQuestionImageUrls(data: Record<string, unknown>): string[] {
   return errors;
 }
 
+//----------------------------------------------------
+// 9. Question Validation
+//----------------------------------------------------
+/**
+ * Function: validateQuestionData
+ * Description:
+ * - Validates complete question data including text, timing, points, and answers
+ * - Aggregates validation from multiple helper functions
+ */
 export function validateQuestionData(data: Record<string, unknown>): {
   isValid: boolean;
   errors: string[];
 } {
   const errors: string[] = [];
 
-  // Validate question text
   errors.push(...validateQuestionText(data.question_text));
-
-  // Validate timing
   errors.push(...validateQuestionTiming(data));
-
-  // Validate points
   errors.push(...validateQuestionPoints(data.points));
 
-  // Validate answers
   const answers = data.answers as Array<Record<string, unknown>>;
   errors.push(...validateAnswerCount(answers));
 
@@ -342,7 +403,6 @@ export function validateQuestionData(data: Record<string, unknown>): {
     errors.push(...validateIndividualAnswers(answers));
   }
 
-  // Validate image URLs
   errors.push(...validateQuestionImageUrls(data));
 
   return {
@@ -351,13 +411,20 @@ export function validateQuestionData(data: Record<string, unknown>): {
   };
 }
 
+//----------------------------------------------------
+// 10. Answer and Reorder Validation
+//----------------------------------------------------
+/**
+ * Function: validateAnswerData
+ * Description:
+ * - Validates answer data including text, image URL, and order index
+ */
 export function validateAnswerData(data: Record<string, unknown>): {
   isValid: boolean;
   errors: string[];
 } {
   const errors: string[] = [];
 
-  // Validate answer text
   if (
     !data.answer_text ||
     (data.answer_text as string).length < 1 ||
@@ -366,12 +433,10 @@ export function validateAnswerData(data: Record<string, unknown>): {
     errors.push('Answer text must be between 1 and 200 characters');
   }
 
-  // Validate image URL if provided
   if (data.image_url && !validateImageUrl(data.image_url as string)) {
     errors.push('Invalid answer image URL format');
   }
 
-  // Validate order index
   if ((data.order_index as number) < 0) {
     errors.push('Order index must be non-negative');
   }
@@ -382,19 +447,23 @@ export function validateAnswerData(data: Record<string, unknown>): {
   };
 }
 
+/**
+ * Function: validateReorderQuestionsData
+ * Description:
+ * - Validates question reordering data
+ * - Ensures questionIds is a non-empty array of valid UUIDs
+ */
 export function validateReorderQuestionsData(data: Record<string, unknown>): {
   isValid: boolean;
   errors: string[];
 } {
   const errors: string[] = [];
 
-  // Validate questionIds array
   if (!Array.isArray(data.questionIds)) {
     errors.push('questionIds must be an array');
   } else if (data.questionIds.length === 0) {
     errors.push('questionIds must not be empty');
   } else {
-    // Validate each question ID is a valid UUID
     data.questionIds.forEach((id: unknown, index: number) => {
       if (
         typeof id !== 'string' ||
