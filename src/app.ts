@@ -46,69 +46,94 @@ import websocketConnectionRoutes from './routes/websocket-connections';
 import { AuthenticatedRequest } from './types/auth';
 
 //----------------------------------------------------
-// 2. Application Factory
+// 2. Constants / Configuration
 //----------------------------------------------------
+const API_VERSION = '1.0.0';
+const API_STATUS_RUNNING = 'running';
+
+const WELCOME_MESSAGE = 'Welcome to TUIZ Backend API';
+const PROTECTED_ROUTE_MESSAGE = 'This is a protected route';
+
+const ERROR_NOT_FOUND = 'not_found';
+const ERROR_NOT_FOUND_MESSAGE = 'Route not found';
+
+const HTTP_STATUS_NOT_FOUND = 404;
+
+const ROUTE_PATHS = {
+  ROOT: '/',
+  AUTH: '/auth',
+  HEALTH: '/health',
+  PROFILE: '/profile',
+  UPLOAD: '/upload',
+  QUIZ: '/quiz',
+  QUIZ_LIBRARY: '/quiz-library',
+  GAMES: '/games',
+  WEBSOCKET_CONNECTIONS: '/websocket-connections',
+  DEVICE_SESSIONS: '/device-sessions',
+  PROTECTED: '/protected',
+} as const;
+
+//----------------------------------------------------
+// 3. Core Logic
+//----------------------------------------------------
+/**
+ * Function: createApp
+ * Description:
+ * - Creates and configures Express application
+ * - Sets up middleware, routes, and error handling
+ *
+ * Returns:
+ * - express.Application: Configured Express application instance
+ */
 export function createApp() {
   const app = express();
 
-  //----------------------------------------------------
-  // 3. Core Middleware
-  //----------------------------------------------------
   app.use(corsMw);
   app.use(express.json());
 
-  //----------------------------------------------------
-  // 4. Welcome Route
-  //----------------------------------------------------
-  app.get('/', (req, res) => {
+  app.get(ROUTE_PATHS.ROOT, (req, res) => {
     res.json({
-      message: 'Welcome to TUIZ Backend API',
-      version: '1.0.0',
-      status: 'running',
+      message: WELCOME_MESSAGE,
+      version: API_VERSION,
+      status: API_STATUS_RUNNING,
       timestamp: new Date().toISOString(),
     });
   });
 
-  //----------------------------------------------------
-  // 5. API Routes
-  //----------------------------------------------------
-  app.use('/auth', authRoutes);
-  app.use('/health', health);
-  app.use('/profile', profileRoutes);
-  app.use('/upload', uploadRoutes);
-  app.use('/quiz', quizRoutes);
-  app.use('/quiz', questionRoutes);
-  app.use('/quiz', answerRoutes);
-  app.use('/quiz', publishingRoutes);
-  app.use('/quiz', codeRoutes);
-  app.use('/quiz-library', quizLibraryRoutes);
-  app.use('/games', gameRoutes);
-  app.use('/games', gameStateRoutes);
-  app.use('/games', gameFlowRoutes);
-  app.use('/games', gameEventRoutes);
-  app.use('/games', playerRoutes);
-  app.use('/games', gamePlayerDataRoutes);
-  app.use('/games', roomParticipantRoutes);
-  app.use('/websocket-connections', websocketConnectionRoutes);
-  app.use('/device-sessions', deviceSessionRoutes);
+  app.use(ROUTE_PATHS.AUTH, authRoutes);
+  app.use(ROUTE_PATHS.HEALTH, health);
+  app.use(ROUTE_PATHS.PROFILE, profileRoutes);
+  app.use(ROUTE_PATHS.UPLOAD, uploadRoutes);
+  app.use(ROUTE_PATHS.QUIZ, quizRoutes);
+  app.use(ROUTE_PATHS.QUIZ, questionRoutes);
+  app.use(ROUTE_PATHS.QUIZ, answerRoutes);
+  app.use(ROUTE_PATHS.QUIZ, publishingRoutes);
+  app.use(ROUTE_PATHS.QUIZ, codeRoutes);
+  app.use(ROUTE_PATHS.QUIZ_LIBRARY, quizLibraryRoutes);
+  app.use(ROUTE_PATHS.GAMES, gameRoutes);
+  app.use(ROUTE_PATHS.GAMES, gameStateRoutes);
+  app.use(ROUTE_PATHS.GAMES, gameFlowRoutes);
+  app.use(ROUTE_PATHS.GAMES, gameEventRoutes);
+  app.use(ROUTE_PATHS.GAMES, playerRoutes);
+  app.use(ROUTE_PATHS.GAMES, gamePlayerDataRoutes);
+  app.use(ROUTE_PATHS.GAMES, roomParticipantRoutes);
+  app.use(ROUTE_PATHS.WEBSOCKET_CONNECTIONS, websocketConnectionRoutes);
+  app.use(ROUTE_PATHS.DEVICE_SESSIONS, deviceSessionRoutes);
   app.use(playerRoutes);
   app.use(roomParticipantRoutes);
 
-  //----------------------------------------------------
-  // 6. Protected Route Example
-  //----------------------------------------------------
-  app.get('/protected', authMiddleware, (req: AuthenticatedRequest, res) => {
+  app.get(ROUTE_PATHS.PROTECTED, authMiddleware, (req: AuthenticatedRequest, res) => {
     res.json({
-      message: 'This is a protected route',
+      message: PROTECTED_ROUTE_MESSAGE,
       user: req.user,
     });
   });
 
-  //----------------------------------------------------
-  // 7. Error Handling
-  //----------------------------------------------------
   app.use((_req, res) => {
-    res.status(404).json({ error: 'not_found', message: 'Route not found' });
+    res.status(HTTP_STATUS_NOT_FOUND).json({
+      error: ERROR_NOT_FOUND,
+      message: ERROR_NOT_FOUND_MESSAGE,
+    });
   });
 
   app.use(errorMw);
