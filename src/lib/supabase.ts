@@ -1,30 +1,27 @@
-// src/lib/supabase.ts
-/**
- * Enhanced Supabase Client Library for Quiz API
- *
- * This module provides a comprehensive interface to Supabase for the quiz application,
- * including typed clients, utility functions, and helper methods.
- *
- * Features:
- * - Typed Supabase clients with full Database schema
- * - Mock client for testing environments
- * - Quiz-specific helper functions
- * - Storage operations for quiz images
- * - Authentication utilities
- * - Error handling and formatting
- *
- * @example
- * import { supabaseAdmin, generateQuizCode, verifyAuthToken } from './supabase';
- *
- * // Generate unique quiz code
- * const code = await generateQuizCode();
- *
- * // Verify user authentication
- * const { user, error } = await verifyAuthToken(token);
- *
- * // Get quiz for playing
- * const quiz = await getQuizForPlay(quizId);
- */
+// ====================================================
+// File Name   : supabase.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-08-22
+// Last Update : 2025-11-24
+
+// Description:
+// - Enhanced Supabase Client Library for Quiz API
+// - Provides comprehensive interface to Supabase
+// - Includes typed clients, utility functions, and helper methods
+// - Features: Typed Supabase clients, mock client for testing,
+//   quiz-specific helpers, storage operations, auth utilities, error handling
+
+// Notes:
+// - Mock client used in test environments
+// - Admin client uses service role key for admin operations
+// - Regular client uses anon key for user operations
+// - All clients have autoRefreshToken and persistSession disabled
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { env, isTestWithDummyCredentials } from '../config/env';
 import type {
@@ -38,21 +35,105 @@ import type {
 } from '../types/quiz';
 import { logger } from '../utils/logger';
 
-// ============================================================================
-// VALIDATION
-// ============================================================================
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const ERROR_MESSAGES = {
+  MISSING_SUPABASE_URL: 'Missing SUPABASE_URL environment variable',
+  MISSING_SERVICE_ROLE_KEY: 'Missing SUPABASE_SERVICE_ROLE_KEY environment variable',
+  FAILED_TO_GENERATE_QUIZ_CODE: 'Failed to generate quiz code',
+  FAILED_TO_UPDATE_QUESTION_COUNT: 'Failed to update quiz question count',
+  FAILED_TO_INCREMENT_PLAY_COUNT: 'Failed to increment quiz play count',
+  UNEXPECTED_DATABASE_ERROR: 'An unexpected database error occurred',
+  RESOURCE_NOT_FOUND: 'The requested resource was not found',
+  DUPLICATE_VALUE: 'A record with this value already exists',
+  FOREIGN_KEY_VIOLATION: 'Cannot perform this action due to related data',
+  INSUFFICIENT_PRIVILEGES: 'You do not have permission to perform this action',
+  DATABASE_ERROR: 'A database error occurred',
+} as const;
 
+const ERROR_CODES = {
+  NOT_FOUND: 'not_found',
+  DUPLICATE_VALUE: 'duplicate_value',
+  FOREIGN_KEY_VIOLATION: 'foreign_key_violation',
+  INSUFFICIENT_PRIVILEGES: 'insufficient_privileges',
+  DATABASE_ERROR: 'database_error',
+} as const;
+
+const SUPABASE_ERROR_CODES = {
+  NOT_FOUND: 'PGRST116',
+  UNIQUE_VIOLATION: '23505',
+  FOREIGN_KEY_VIOLATION: '23503',
+  INSUFFICIENT_PRIVILEGES: '42501',
+} as const;
+
+const TABLE_PROFILES = 'profiles';
+const BUCKET_QUIZ_IMAGES = 'quiz-images';
+
+const SELECT_PROFILE_FIELDS =
+  'id, username, display_name, email, role, avatar_url, created_at, updated_at';
+const SELECT_ROLE_FIELD = 'role';
+
+const MOCK_VALUES = {
+  USER_ID: 'mock-user-id',
+  EMAIL: 'mock@example.com',
+  USERNAME: 'mockuser',
+  DISPLAY_NAME: 'Mock User',
+  TOKEN: 'mock-token',
+  REFRESH_TOKEN: 'mock-refresh-token',
+  INVALID_TOKEN: 'invalid-token',
+  MIN_TOKEN_LENGTH: 10,
+  WRONG_PASSWORD: 'wrongpassword123',
+} as const;
+
+const LOG_MESSAGES = {
+  TOKEN_VERIFICATION_FAILED: 'Token verification failed',
+  UNEXPECTED_ERROR_TOKEN_VERIFICATION: 'Unexpected error during token verification',
+  ERROR_FETCHING_USER_PROFILE: 'Error fetching user profile',
+  UNEXPECTED_ERROR_FETCHING_PROFILE: 'Unexpected error fetching user profile',
+  ERROR_CHECKING_ADMIN_STATUS: 'Error checking admin status',
+  CLEANUP_CALLED_OUTSIDE_TEST: 'cleanupTestUsers called outside test environment',
+  ERROR_CLEANING_UP_TEST_USERS: 'Error cleaning up test users',
+  ERROR_GENERATING_QUIZ_CODE: 'Error generating quiz code',
+  UNEXPECTED_ERROR_GENERATING_CODE: 'Unexpected error generating quiz code',
+  ERROR_UPDATING_QUESTION_COUNT: 'Error updating quiz question count',
+  UNEXPECTED_ERROR_UPDATING_COUNT: 'Unexpected error updating quiz question count',
+  ERROR_INCREMENTING_PLAY_COUNT: 'Error incrementing quiz play count',
+  UNEXPECTED_ERROR_INCREMENTING_COUNT: 'Unexpected error incrementing quiz play count',
+  ERROR_VALIDATING_QUIZ: 'Error validating quiz for publishing',
+  UNEXPECTED_ERROR_VALIDATING: 'Unexpected error validating quiz for publishing',
+  ERROR_GETTING_QUIZ_FOR_PLAY: 'Error getting quiz for play',
+  UNEXPECTED_ERROR_GETTING_QUIZ: 'Unexpected error getting quiz for play',
+  ERROR_UPLOADING_QUIZ_IMAGE: 'Error uploading quiz image',
+  UNEXPECTED_ERROR_UPLOADING_IMAGE: 'Unexpected error uploading quiz image',
+  ERROR_DELETING_QUIZ_IMAGE: 'Error deleting quiz image',
+  UNEXPECTED_ERROR_DELETING_IMAGE: 'Unexpected error deleting quiz image',
+} as const;
+
+const DEFAULT_QUIZ_VALUES = {
+  USER_ID: '',
+  DIFFICULTY_LEVEL: 'easy' as DifficultyLevel,
+  CATEGORY: '',
+  TOTAL_QUESTIONS: 0,
+  TIMES_PLAYED: 0,
+  CREATED_AT: '',
+  UPDATED_AT: '',
+  STATUS: 'published' as QuizStatus,
+  IS_PUBLIC: true,
+  TAGS: [],
+} as const;
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
+// Validation - must be before type definitions
 if (!env.SUPABASE_URL) {
-  throw new Error('Missing SUPABASE_URL environment variable');
+  throw new Error(ERROR_MESSAGES.MISSING_SUPABASE_URL);
 }
 
 if (!env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+  throw new Error(ERROR_MESSAGES.MISSING_SERVICE_ROLE_KEY);
 }
-
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
 
 export interface Database {
   public: {
@@ -238,10 +319,19 @@ export interface Database {
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
 
-// ============================================================================
-// MOCK CLIENT FOR TESTING
-// ============================================================================
-
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
+/**
+ * Function: createMockSupabaseClient
+ * Description:
+ * - Creates a mock Supabase client for testing environments
+ * - Provides mock implementations of all Supabase methods
+ * - Returns valid mock data for properly formatted tokens
+ *
+ * Returns:
+ * - TypedSupabaseClient: Mock Supabase client instance
+ */
 function createMockSupabaseClient(): TypedSupabaseClient {
   const mockResponse = { data: null, error: null };
 
@@ -250,20 +340,25 @@ function createMockSupabaseClient(): TypedSupabaseClient {
       admin: {
         listUsers: async () => ({ data: { users: [] }, error: null }),
         getUserById: async () => ({ data: null, error: { message: 'User not found in mock' } }),
-        createUser: async () => ({ data: { user: { id: 'mock-user-id' } }, error: null }),
+        createUser: async () => ({ data: { user: { id: MOCK_VALUES.USER_ID } }, error: null }),
         deleteUser: async () => ({ data: null, error: null }),
         getUser: async (token: string) => {
-          // Mock behavior: return error for obviously invalid tokens
-          if (token === 'invalid-token' || !token || token.length < 10) {
+          if (
+            token === MOCK_VALUES.INVALID_TOKEN ||
+            !token ||
+            token.length < MOCK_VALUES.MIN_TOKEN_LENGTH
+          ) {
             return { data: { user: null }, error: { message: 'Invalid token' } };
           }
-          // For CI environment, always return a valid user for properly formatted tokens
           return {
             data: {
               user: {
-                id: 'mock-user-id',
-                email: 'mock@example.com',
-                user_metadata: { username: 'mockuser', display_name: 'Mock User' },
+                id: MOCK_VALUES.USER_ID,
+                email: MOCK_VALUES.EMAIL,
+                user_metadata: {
+                  username: MOCK_VALUES.USERNAME,
+                  display_name: MOCK_VALUES.DISPLAY_NAME,
+                },
               },
             },
             error: null,
@@ -272,25 +367,32 @@ function createMockSupabaseClient(): TypedSupabaseClient {
         signOut: async () => ({ data: null, error: null }),
       },
       getUser: async (token: string) => {
-        // Mock behavior for regular client: return error for obviously invalid tokens
-        if (token === 'invalid-token' || !token || token.length < 10) {
+        if (
+          token === MOCK_VALUES.INVALID_TOKEN ||
+          !token ||
+          token.length < MOCK_VALUES.MIN_TOKEN_LENGTH
+        ) {
           return { data: { user: null }, error: { message: 'Invalid token' } };
         }
-        // For CI environment, always return a valid user for properly formatted tokens
         return {
           data: {
             user: {
-              id: 'mock-user-id',
-              email: 'mock@example.com',
-              user_metadata: { username: 'mockuser', display_name: 'Mock User' },
+              id: MOCK_VALUES.USER_ID,
+              email: MOCK_VALUES.EMAIL,
+              user_metadata: {
+                username: MOCK_VALUES.USERNAME,
+                display_name: MOCK_VALUES.DISPLAY_NAME,
+              },
             },
           },
           error: null,
         };
       },
       signInWithPassword: async (credentials: { email: string; password: string }) => {
-        // Mock behavior: return error for invalid credentials
-        if (credentials.password === 'wrongpassword123' || !credentials.email.includes('@')) {
+        if (
+          credentials.password === MOCK_VALUES.WRONG_PASSWORD ||
+          !credentials.email.includes('@')
+        ) {
           return {
             data: { user: null, session: null },
             error: { message: 'Invalid login credentials' },
@@ -298,8 +400,11 @@ function createMockSupabaseClient(): TypedSupabaseClient {
         }
         return {
           data: {
-            user: { id: 'mock-user-id' },
-            session: { access_token: 'mock-token', refresh_token: 'mock-refresh-token' },
+            user: { id: MOCK_VALUES.USER_ID },
+            session: {
+              access_token: MOCK_VALUES.TOKEN,
+              refresh_token: MOCK_VALUES.REFRESH_TOKEN,
+            },
           },
           error: null,
         };
@@ -307,8 +412,11 @@ function createMockSupabaseClient(): TypedSupabaseClient {
       signOut: async () => ({ data: null, error: null }),
       signUp: async () => ({
         data: {
-          user: { id: 'mock-user-id' },
-          session: { access_token: 'mock-token', refresh_token: 'mock-refresh-token' },
+          user: { id: MOCK_VALUES.USER_ID },
+          session: {
+            access_token: MOCK_VALUES.TOKEN,
+            refresh_token: MOCK_VALUES.REFRESH_TOKEN,
+          },
         },
         error: null,
       }),
@@ -363,11 +471,13 @@ function createMockSupabaseClient(): TypedSupabaseClient {
   } as unknown as TypedSupabaseClient;
 }
 
-// ============================================================================
-// CLIENT INSTANCES
-// ============================================================================
-
-// Server-side Supabase client with service role key for admin operations
+/**
+ * Client: supabaseAdmin
+ * Description:
+ * - Server-side Supabase client with service role key
+ * - Used for admin operations that bypass RLS
+ * - Uses mock client in test environments
+ */
 export const supabaseAdmin: TypedSupabaseClient = isTestWithDummyCredentials
   ? createMockSupabaseClient()
   : createClient<Database>(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
@@ -377,7 +487,13 @@ export const supabaseAdmin: TypedSupabaseClient = isTestWithDummyCredentials
       },
     });
 
-// Regular client for user operations (using anon key)
+/**
+ * Client: supabase
+ * Description:
+ * - Regular Supabase client for user operations
+ * - Uses anon key and respects RLS policies
+ * - Uses mock client in test environments
+ */
 export const supabase: TypedSupabaseClient = isTestWithDummyCredentials
   ? createMockSupabaseClient()
   : createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY || '', {
@@ -387,12 +503,22 @@ export const supabase: TypedSupabaseClient = isTestWithDummyCredentials
       },
     });
 
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
+//----------------------------------------------------
+// 5. Helper Functions
+//----------------------------------------------------
 
 /**
- * Create an authenticated Supabase client with user token
+ * Function: createAuthenticatedClient
+ * Description:
+ * - Create an authenticated Supabase client with user token
+ * - Uses anon key with Bearer token in headers
+ * - Respects RLS policies based on user token
+ *
+ * Parameters:
+ * - token (string): JWT authentication token
+ *
+ * Returns:
+ * - TypedSupabaseClient: Authenticated Supabase client instance
  */
 export function createAuthenticatedClient(token: string): TypedSupabaseClient {
   return createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY || '', {
@@ -409,7 +535,16 @@ export function createAuthenticatedClient(token: string): TypedSupabaseClient {
 }
 
 /**
- * Verify JWT token and get user information
+ * Function: verifyAuthToken
+ * Description:
+ * - Verify JWT token and get user information
+ * - Uses admin client for token verification
+ *
+ * Parameters:
+ * - token (string): JWT token to verify
+ *
+ * Returns:
+ * - Promise<{ user: unknown | null; error: unknown }>: User data or error
  */
 export async function verifyAuthToken(
   token: string,
@@ -418,49 +553,67 @@ export async function verifyAuthToken(
     const { data, error } = await supabaseAdmin.auth.getUser(token);
 
     if (error) {
-      logger.warn({ error: error.message }, 'Token verification failed');
+      logger.warn({ error: error.message }, LOG_MESSAGES.TOKEN_VERIFICATION_FAILED);
       return { user: null, error };
     }
 
     return { user: data.user, error: null };
   } catch (err) {
-    logger.error({ err }, 'Unexpected error during token verification');
+    logger.error({ err }, LOG_MESSAGES.UNEXPECTED_ERROR_TOKEN_VERIFICATION);
     return { user: null, error: err };
   }
 }
 
 /**
- * Get user profile by ID
+ * Function: getUserProfile
+ * Description:
+ * - Get user profile by ID
+ * - Excludes soft-deleted profiles
+ *
+ * Parameters:
+ * - userId (string): User identifier
+ *
+ * Returns:
+ * - Promise<Profile | null>: User profile or null if not found or error
  */
 export async function getUserProfile(userId: string) {
   try {
     const { data: profile, error } = await supabaseAdmin
-      .from('profiles')
-      .select('id, username, display_name, email, role, avatar_url, created_at, updated_at')
+      .from(TABLE_PROFILES)
+      .select(SELECT_PROFILE_FIELDS)
       .eq('id', userId)
       .is('deleted_at', null)
       .maybeSingle();
 
     if (error) {
-      logger.error({ error, userId }, 'Error fetching user profile');
+      logger.error({ error, userId }, LOG_MESSAGES.ERROR_FETCHING_USER_PROFILE);
       return null;
     }
 
     return profile;
   } catch (err) {
-    logger.error({ err, userId }, 'Unexpected error fetching user profile');
+    logger.error({ err, userId }, LOG_MESSAGES.UNEXPECTED_ERROR_FETCHING_PROFILE);
     return null;
   }
 }
 
 /**
- * Check if user has admin role
+ * Function: isUserAdmin
+ * Description:
+ * - Check if user has admin role
+ * - Excludes soft-deleted profiles
+ *
+ * Parameters:
+ * - userId (string): User identifier
+ *
+ * Returns:
+ * - Promise<boolean>: True if user is admin, false otherwise
  */
 export async function isUserAdmin(userId: string): Promise<boolean> {
   try {
     const { data: profile, error } = await supabaseAdmin
-      .from('profiles')
-      .select('role')
+      .from(TABLE_PROFILES)
+      .select(SELECT_ROLE_FIELD)
       .eq('id', userId)
       .is('deleted_at', null)
       .maybeSingle();
@@ -471,61 +624,86 @@ export async function isUserAdmin(userId: string): Promise<boolean> {
 
     return profile.role === 'admin';
   } catch (err) {
-    logger.error({ err, userId }, 'Error checking admin status');
+    logger.error({ err, userId }, LOG_MESSAGES.ERROR_CHECKING_ADMIN_STATUS);
     return false;
   }
 }
 
 /**
- * Clean up test data (for testing purposes only)
+ * Function: cleanupTestUsers
+ * Description:
+ * - Clean up test data (for testing purposes only)
+ * - Deletes users from auth and soft-deletes profiles
+ * - Only works in test environment
+ *
+ * Parameters:
+ * - userIds (string[]): Array of user IDs to clean up
+ *
+ * Returns:
+ * - Promise<void>: No return value
  */
 export async function cleanupTestUsers(userIds: string[]): Promise<void> {
   if (env.NODE_ENV !== 'test') {
-    logger.warn('cleanupTestUsers called outside test environment');
+    logger.warn(LOG_MESSAGES.CLEANUP_CALLED_OUTSIDE_TEST);
     return;
   }
 
   try {
     for (const userId of userIds) {
-      // Delete user from auth
       await supabaseAdmin.auth.admin.deleteUser(userId);
 
-      // Soft delete profile
       await supabaseAdmin
-        .from('profiles')
+        .from(TABLE_PROFILES)
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', userId);
     }
   } catch (err) {
-    logger.error({ err, userIds }, 'Error cleaning up test users');
+    logger.error({ err, userIds }, LOG_MESSAGES.ERROR_CLEANING_UP_TEST_USERS);
   }
 }
 
-// ============================================================================
-// QUIZ HELPER FUNCTIONS
-// ============================================================================
-
 /**
- * Generate unique quiz code
+ * Function: generateQuizCode
+ * Description:
+ * - Generate unique quiz code using database function
+ * - Throws error if generation fails
+ *
+ * Returns:
+ * - Promise<number>: Unique 6-digit quiz code
+ *
+ * Throws:
+ * - Error: If code generation fails
  */
 export async function generateQuizCode(): Promise<number> {
   try {
     const { data, error } = await supabaseAdmin.rpc('generate_quiz_code');
 
     if (error) {
-      logger.error({ error }, 'Error generating quiz code');
-      throw new Error('Failed to generate quiz code');
+      logger.error({ error }, LOG_MESSAGES.ERROR_GENERATING_QUIZ_CODE);
+      throw new Error(ERROR_MESSAGES.FAILED_TO_GENERATE_QUIZ_CODE);
     }
 
     return data as number;
   } catch (err) {
-    logger.error({ err }, 'Unexpected error generating quiz code');
+    logger.error({ err }, LOG_MESSAGES.UNEXPECTED_ERROR_GENERATING_CODE);
     throw err;
   }
 }
 
 /**
- * Update quiz question count
+ * Function: updateQuizQuestionCount
+ * Description:
+ * - Update quiz question count using database function
+ * - Throws error if update fails
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - Promise<void>: No return value
+ *
+ * Throws:
+ * - Error: If update fails
  */
 export async function updateQuizQuestionCount(quizId: string): Promise<void> {
   try {
@@ -534,17 +712,29 @@ export async function updateQuizQuestionCount(quizId: string): Promise<void> {
     });
 
     if (error) {
-      logger.error({ error, quizId }, 'Error updating quiz question count');
-      throw new Error('Failed to update quiz question count');
+      logger.error({ error, quizId }, LOG_MESSAGES.ERROR_UPDATING_QUESTION_COUNT);
+      throw new Error(ERROR_MESSAGES.FAILED_TO_UPDATE_QUESTION_COUNT);
     }
   } catch (err) {
-    logger.error({ err, quizId }, 'Unexpected error updating quiz question count');
+    logger.error({ err, quizId }, LOG_MESSAGES.UNEXPECTED_ERROR_UPDATING_COUNT);
     throw err;
   }
 }
 
 /**
- * Increment quiz play count
+ * Function: incrementQuizPlayCount
+ * Description:
+ * - Increment quiz play count using database function
+ * - Throws error if increment fails
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - Promise<void>: No return value
+ *
+ * Throws:
+ * - Error: If increment fails
  */
 export async function incrementQuizPlayCount(quizId: string): Promise<void> {
   try {
@@ -553,17 +743,26 @@ export async function incrementQuizPlayCount(quizId: string): Promise<void> {
     });
 
     if (error) {
-      logger.error({ error, quizId }, 'Error incrementing quiz play count');
-      throw new Error('Failed to increment quiz play count');
+      logger.error({ error, quizId }, LOG_MESSAGES.ERROR_INCREMENTING_PLAY_COUNT);
+      throw new Error(ERROR_MESSAGES.FAILED_TO_INCREMENT_PLAY_COUNT);
     }
   } catch (err) {
-    logger.error({ err, quizId }, 'Unexpected error incrementing quiz play count');
+    logger.error({ err, quizId }, LOG_MESSAGES.UNEXPECTED_ERROR_INCREMENTING_COUNT);
     throw err;
   }
 }
 
 /**
- * Validate quiz for publishing
+ * Function: validateQuizForPublishing
+ * Description:
+ * - Validate quiz for publishing using database function
+ * - Returns false on error or validation failure
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - Promise<boolean>: True if quiz is valid for publishing, false otherwise
  */
 export async function validateQuizForPublishing(quizId: string): Promise<boolean> {
   try {
@@ -572,19 +771,29 @@ export async function validateQuizForPublishing(quizId: string): Promise<boolean
     });
 
     if (error) {
-      logger.error({ error, quizId }, 'Error validating quiz for publishing');
+      logger.error({ error, quizId }, LOG_MESSAGES.ERROR_VALIDATING_QUIZ);
       return false;
     }
 
     return data as boolean;
   } catch (err) {
-    logger.error({ err, quizId }, 'Unexpected error validating quiz for publishing');
+    logger.error({ err, quizId }, LOG_MESSAGES.UNEXPECTED_ERROR_VALIDATING);
     return false;
   }
 }
 
 /**
- * Get complete quiz data for playing
+ * Function: getQuizForPlay
+ * Description:
+ * - Get complete quiz data for playing
+ * - Uses database function to retrieve quiz with questions
+ * - Returns formatted QuizSetComplete object
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - Promise<QuizSetComplete | null>: Complete quiz data or null if not found or error
  */
 export async function getQuizForPlay(quizId: string): Promise<QuizSetComplete | null> {
   try {
@@ -593,7 +802,7 @@ export async function getQuizForPlay(quizId: string): Promise<QuizSetComplete | 
     });
 
     if (error) {
-      logger.error({ error, quizId }, 'Error getting quiz for play');
+      logger.error({ error, quizId }, LOG_MESSAGES.ERROR_GETTING_QUIZ_FOR_PLAY);
       return null;
     }
 
@@ -604,34 +813,42 @@ export async function getQuizForPlay(quizId: string): Promise<QuizSetComplete | 
     const quizData = data[0];
     return {
       id: quizData.quiz_id,
-      user_id: '', // Not needed for playing
+      user_id: DEFAULT_QUIZ_VALUES.USER_ID,
       title: quizData.quiz_title,
       description: quizData.quiz_description,
       thumbnail_url: undefined,
-      is_public: true,
-      difficulty_level: 'easy' as DifficultyLevel,
-      category: '',
-      total_questions: quizData.questions?.length || 0,
-      times_played: 0,
-      created_at: '',
-      updated_at: '',
-      status: 'published' as QuizStatus,
-      tags: [],
+      is_public: DEFAULT_QUIZ_VALUES.IS_PUBLIC,
+      difficulty_level: DEFAULT_QUIZ_VALUES.DIFFICULTY_LEVEL,
+      category: DEFAULT_QUIZ_VALUES.CATEGORY,
+      total_questions: quizData.questions?.length || DEFAULT_QUIZ_VALUES.TOTAL_QUESTIONS,
+      times_played: DEFAULT_QUIZ_VALUES.TIMES_PLAYED,
+      created_at: DEFAULT_QUIZ_VALUES.CREATED_AT,
+      updated_at: DEFAULT_QUIZ_VALUES.UPDATED_AT,
+      status: DEFAULT_QUIZ_VALUES.STATUS,
+      tags: [...DEFAULT_QUIZ_VALUES.TAGS],
       play_settings: quizData.quiz_settings,
       questions: quizData.questions || [],
     } as QuizSetComplete;
   } catch (err) {
-    logger.error({ err, quizId }, 'Unexpected error getting quiz for play');
+    logger.error({ err, quizId }, LOG_MESSAGES.UNEXPECTED_ERROR_GETTING_QUIZ);
     return null;
   }
 }
 
-// ============================================================================
-// STORAGE HELPERS
-// ============================================================================
-
 /**
- * Upload file to quiz images bucket
+ * Function: uploadQuizImage
+ * Description:
+ * - Upload file to quiz images bucket
+ * - Returns public URL on success
+ *
+ * Parameters:
+ * - userId (string): User identifier for file path
+ * - file (Buffer): File buffer to upload
+ * - fileName (string): Name of the file
+ * - mimeType (string): MIME type of the file
+ *
+ * Returns:
+ * - Promise<string | null>: Public URL of uploaded image or null on error
  */
 export async function uploadQuizImage(
   userId: string,
@@ -642,50 +859,63 @@ export async function uploadQuizImage(
   try {
     const filePath = `${userId}/${fileName}`;
 
-    const { error } = await supabaseAdmin.storage.from('quiz-images').upload(filePath, file, {
+    const { error } = await supabaseAdmin.storage.from(BUCKET_QUIZ_IMAGES).upload(filePath, file, {
       contentType: mimeType,
       upsert: true,
     });
 
     if (error) {
-      logger.error({ error, filePath }, 'Error uploading quiz image');
+      logger.error({ error, filePath }, LOG_MESSAGES.ERROR_UPLOADING_QUIZ_IMAGE);
       return null;
     }
 
-    const { data: urlData } = supabaseAdmin.storage.from('quiz-images').getPublicUrl(filePath);
+    const { data: urlData } = supabaseAdmin.storage.from(BUCKET_QUIZ_IMAGES).getPublicUrl(filePath);
 
     return urlData.publicUrl;
   } catch (err) {
-    logger.error({ err, userId, fileName }, 'Unexpected error uploading quiz image');
+    logger.error({ err, userId, fileName }, LOG_MESSAGES.UNEXPECTED_ERROR_UPLOADING_IMAGE);
     return null;
   }
 }
 
 /**
- * Delete quiz image
+ * Function: deleteQuizImage
+ * Description:
+ * - Delete quiz image from storage bucket
+ *
+ * Parameters:
+ * - filePath (string): Path to the file in storage
+ *
+ * Returns:
+ * - Promise<boolean>: True if deletion successful, false otherwise
  */
 export async function deleteQuizImage(filePath: string): Promise<boolean> {
   try {
-    const { error } = await supabaseAdmin.storage.from('quiz-images').remove([filePath]);
+    const { error } = await supabaseAdmin.storage.from(BUCKET_QUIZ_IMAGES).remove([filePath]);
 
     if (error) {
-      logger.error({ error, filePath }, 'Error deleting quiz image');
+      logger.error({ error, filePath }, LOG_MESSAGES.ERROR_DELETING_QUIZ_IMAGE);
       return false;
     }
 
     return true;
   } catch (err) {
-    logger.error({ err, filePath }, 'Unexpected error deleting quiz image');
+    logger.error({ err, filePath }, LOG_MESSAGES.UNEXPECTED_ERROR_DELETING_IMAGE);
     return false;
   }
 }
 
-// ============================================================================
-// ERROR HELPERS
-// ============================================================================
-
 /**
- * Check if error is a Supabase error
+ * Function: isSupabaseError
+ * Description:
+ * - Check if error is a Supabase error
+ * - Type guard for Supabase error objects
+ *
+ * Parameters:
+ * - error (unknown): Error to check
+ *
+ * Returns:
+ * - boolean: True if error is a Supabase error, false otherwise
  */
 export function isSupabaseError(error: unknown): error is { code?: string; message?: string } {
   return Boolean(
@@ -694,44 +924,57 @@ export function isSupabaseError(error: unknown): error is { code?: string; messa
 }
 
 /**
- * Format Supabase error for API response
+ * Function: formatSupabaseError
+ * Description:
+ * - Format Supabase error for API response
+ * - Maps Supabase error codes to user-friendly messages
+ *
+ * Parameters:
+ * - error (unknown): Error to format
+ *
+ * Returns:
+ * - { error: string; message: string }: Formatted error response
  */
 export function formatSupabaseError(error: unknown): { error: string; message: string } {
   if (!isSupabaseError(error)) {
     return {
-      error: 'database_error',
-      message: 'An unexpected database error occurred',
+      error: ERROR_CODES.DATABASE_ERROR,
+      message: ERROR_MESSAGES.UNEXPECTED_DATABASE_ERROR,
     };
   }
 
   const supabaseError = error as { code?: string; message?: string };
 
-  // Map common Supabase errors to user-friendly messages
   switch (supabaseError.code) {
-    case 'PGRST116':
+    case SUPABASE_ERROR_CODES.NOT_FOUND:
       return {
-        error: 'not_found',
-        message: 'The requested resource was not found',
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.RESOURCE_NOT_FOUND,
       };
-    case '23505':
+    case SUPABASE_ERROR_CODES.UNIQUE_VIOLATION:
       return {
-        error: 'duplicate_value',
-        message: 'A record with this value already exists',
+        error: ERROR_CODES.DUPLICATE_VALUE,
+        message: ERROR_MESSAGES.DUPLICATE_VALUE,
       };
-    case '23503':
+    case SUPABASE_ERROR_CODES.FOREIGN_KEY_VIOLATION:
       return {
-        error: 'foreign_key_violation',
-        message: 'Cannot perform this action due to related data',
+        error: ERROR_CODES.FOREIGN_KEY_VIOLATION,
+        message: ERROR_MESSAGES.FOREIGN_KEY_VIOLATION,
       };
-    case '42501':
+    case SUPABASE_ERROR_CODES.INSUFFICIENT_PRIVILEGES:
       return {
-        error: 'insufficient_privileges',
-        message: 'You do not have permission to perform this action',
+        error: ERROR_CODES.INSUFFICIENT_PRIVILEGES,
+        message: ERROR_MESSAGES.INSUFFICIENT_PRIVILEGES,
       };
     default:
       return {
-        error: 'database_error',
-        message: supabaseError.message || 'A database error occurred',
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: supabaseError.message || ERROR_MESSAGES.DATABASE_ERROR,
       };
   }
 }
+
+//----------------------------------------------------
+// 6. Export
+//----------------------------------------------------
+// All exports are in Core Logic and Helper Functions sections
