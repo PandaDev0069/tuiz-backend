@@ -1,4 +1,26 @@
-// src/routes/device-sessions.ts
+// ====================================================
+// File Name   : device-sessions.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-11
+
+// Description:
+// - Express router for device session management endpoints
+// - Handles CRUD operations for device sessions
+// - Manages WebSocket connection tracking and statistics
+// - Provides endpoints for device session queries and updates
+
+// Notes:
+// - All endpoints require authentication via authMiddleware
+// - Uses Zod schemas for request validation
+// - Supports pagination and filtering for device sessions
+// - Provides statistics endpoints for device session analytics
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import express from 'express';
 import { ZodError } from 'zod';
 import { supabaseAdmin } from '../lib/supabase';
@@ -7,23 +29,108 @@ import { AuthenticatedRequest } from '../types/auth';
 import { GetDeviceSessionsSchema, UpdateDeviceSessionSchema } from '../types/websocket';
 import { logger } from '../utils/logger';
 
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const HTTP_STATUS_OK = 200;
+const HTTP_STATUS_BAD_REQUEST = 400;
+const HTTP_STATUS_NOT_FOUND = 404;
+const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
+
+const DEFAULT_PAGINATION_LIMIT = 50;
+const DEFAULT_PAGINATION_OFFSET = 0;
+const MIN_PAGINATION_LIMIT = 1;
+const MAX_PAGINATION_LIMIT = 100;
+const MIN_PAGINATION_OFFSET = 0;
+
+const DECIMAL_PLACES = 2;
+const PERCENTAGE_MULTIPLIER = 100;
+
+const TABLE_DEVICE_SESSIONS = 'device_sessions';
+const TABLE_WEBSOCKET_CONNECTIONS = 'websocket_connections';
+const SELECT_ALL = '*';
+
+const ERROR_CODES = {
+  INVALID_REQUEST: 'invalid_request',
+  VALIDATION_ERROR: 'validation_error',
+  DATABASE_ERROR: 'database_error',
+  SERVER_ERROR: 'server_error',
+  NOT_FOUND: 'not_found',
+} as const;
+
+const ERROR_MESSAGES = {
+  INVALID_QUERY_PARAMETERS: 'Invalid query parameters',
+  INVALID_REQUEST_PARAMETERS: 'Invalid request parameters',
+  DEVICE_ID_REQUIRED: 'device_id is required',
+  INVALID_REQUEST_BODY: 'Invalid request body',
+  NO_FIELDS_TO_UPDATE: 'No fields to update',
+  DEVICE_SESSION_NOT_FOUND: 'Device session not found',
+  FAILED_TO_FETCH_DEVICE_SESSIONS: 'Failed to fetch device sessions',
+  FAILED_TO_FETCH_DEVICE_SESSION: 'Failed to fetch device session',
+  FAILED_TO_CHECK_DEVICE_SESSION: 'Failed to check device session',
+  FAILED_TO_UPDATE_DEVICE_SESSION: 'Failed to update device session',
+  FAILED_TO_FETCH_DEVICE_CONNECTIONS: 'Failed to fetch device connections',
+  LIMIT_MUST_BE_BETWEEN_1_AND_100: 'Limit must be between 1 and 100',
+  OFFSET_MUST_BE_NON_NEGATIVE: 'Offset must be non-negative',
+  FAILED_TO_FETCH_DEVICE_STATISTICS: 'Failed to fetch device statistics',
+  FAILED_TO_FETCH_CONNECTION_STATISTICS: 'Failed to fetch connection statistics',
+  INTERNAL_SERVER_ERROR: 'Internal server error',
+} as const;
+
+const LOG_MESSAGES = {
+  ERROR_FETCHING_DEVICE_SESSIONS: 'Error fetching device sessions',
+  UNHANDLED_ERROR_GET_DEVICE_SESSIONS: 'Unhandled error in get device sessions',
+  ERROR_FETCHING_DEVICE_SESSION: 'Error fetching device session',
+  ERROR_GET_DEVICE_SESSION: 'Error in get device session',
+  ERROR_CHECKING_DEVICE_SESSION: 'Error checking device session',
+  ERROR_UPDATING_DEVICE_SESSION: 'Error updating device session',
+  ERROR_UPDATE_DEVICE_SESSION: 'Error in update device session',
+  ERROR_FETCHING_DEVICE_CONNECTIONS: 'Error fetching device connections',
+  ERROR_GET_DEVICE_CONNECTIONS: 'Error in get device connections',
+  ERROR_FETCHING_DEVICE_COUNT: 'Error fetching device count',
+  ERROR_FETCHING_AGGREGATES: 'Error fetching aggregates',
+  ERROR_GETTING_DEVICE_STATS: 'Error getting device stats',
+} as const;
+
+const DEFAULT_ZERO_STRING = '0.00';
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
+// No additional types - using imported types
+
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
 const router = express.Router();
 
 /**
- * GET /
- * Get all device sessions with optional filtering
+ * Route: GET /
+ * Description:
+ * - Get all device sessions with optional filtering
+ * - Supports pagination and user_id filtering
+ * - Requires authentication via authMiddleware
+ *
+ * Query Parameters:
+ * - user_id (string, optional): Filter by user ID
+ * - limit (number, optional): Number of results per page
+ * - offset (number, optional): Number of results to skip
+ *
+ * Returns:
+ * - 200: Paginated device sessions with metadata
+ * - 400: Invalid query parameters
+ * - 500: Server error
  */
 router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const requestId = req.headers['x-request-id'] as string;
 
   try {
-    // Validate and parse query parameters
     const validation = GetDeviceSessionsSchema.safeParse(req.query);
 
     if (!validation.success) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'Invalid query parameters',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.INVALID_QUERY_PARAMETERS,
         details: validation.error.issues,
         requestId,
       });
@@ -31,14 +138,12 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
 
     const { user_id, limit, offset } = validation.data;
 
-    // Build query
     let query = supabaseAdmin
-      .from('device_sessions')
-      .select('*', { count: 'exact' })
+      .from(TABLE_DEVICE_SESSIONS)
+      .select(SELECT_ALL, { count: 'exact' })
       .order('last_seen', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    // Apply filters
     if (user_id) {
       query = query.eq('user_id', user_id);
     }
@@ -46,15 +151,15 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
     const { data: sessions, error, count } = await query;
 
     if (error) {
-      logger.error({ error, requestId }, 'Error fetching device sessions');
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to fetch device sessions',
+      logger.error({ error, requestId }, LOG_MESSAGES.ERROR_FETCHING_DEVICE_SESSIONS);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_DEVICE_SESSIONS,
         requestId,
       });
     }
 
-    return res.status(200).json({
+    return res.status(HTTP_STATUS_OK).json({
       sessions: sessions || [],
       total: count || 0,
       limit,
@@ -62,26 +167,38 @@ router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {
     });
   } catch (error) {
     if (error instanceof ZodError) {
-      return res.status(400).json({
-        error: 'validation_error',
-        message: 'Invalid request parameters',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.VALIDATION_ERROR,
+        message: ERROR_MESSAGES.INVALID_REQUEST_PARAMETERS,
         details: error.issues,
         requestId,
       });
     }
 
-    logger.error({ error, requestId }, 'Unhandled error in get device sessions');
-    return res.status(500).json({
-      error: 'server_error',
-      message: 'Internal server error',
+    logger.error({ error, requestId }, LOG_MESSAGES.UNHANDLED_ERROR_GET_DEVICE_SESSIONS);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.SERVER_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       requestId,
     });
   }
 });
 
 /**
- * GET /:device_id
- * Get a specific device session by device_id
+ * Route: GET /:device_id
+ * Description:
+ * - Get a specific device session by device_id
+ * - Requires authentication via authMiddleware
+ *
+ * Parameters:
+ * - req.params.device_id: Device identifier
+ * - req.headers['x-request-id']: Request identifier for tracing
+ *
+ * Returns:
+ * - 200: Device session object
+ * - 400: Invalid device_id
+ * - 404: Device session not found
+ * - 500: Server error
  */
 router.get('/:device_id', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const requestId = req.headers['x-request-id'] as string;
@@ -89,50 +206,66 @@ router.get('/:device_id', authMiddleware, async (req: AuthenticatedRequest, res)
 
   try {
     if (!device_id) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'device_id is required',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.DEVICE_ID_REQUIRED,
         requestId,
       });
     }
 
     const { data: session, error } = await supabaseAdmin
-      .from('device_sessions')
-      .select('*')
+      .from(TABLE_DEVICE_SESSIONS)
+      .select(SELECT_ALL)
       .eq('device_id', device_id)
       .maybeSingle();
 
     if (error) {
-      logger.error({ error, deviceId: device_id, requestId }, 'Error fetching device session');
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to fetch device session',
+      logger.error(
+        { error, deviceId: device_id, requestId },
+        LOG_MESSAGES.ERROR_FETCHING_DEVICE_SESSION,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_DEVICE_SESSION,
         requestId,
       });
     }
 
     if (!session) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Device session not found',
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.DEVICE_SESSION_NOT_FOUND,
         requestId,
       });
     }
 
-    return res.status(200).json(session);
+    return res.status(HTTP_STATUS_OK).json(session);
   } catch (error) {
-    logger.error({ error, deviceId: device_id, requestId }, 'Error in get device session');
-    return res.status(500).json({
-      error: 'server_error',
-      message: 'Internal server error',
+    logger.error({ error, deviceId: device_id, requestId }, LOG_MESSAGES.ERROR_GET_DEVICE_SESSION);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.SERVER_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       requestId,
     });
   }
 });
 
 /**
- * PATCH /:device_id
- * Update device session metadata
+ * Route: PATCH /:device_id
+ * Description:
+ * - Update device session metadata
+ * - Requires authentication via authMiddleware
+ *
+ * Parameters:
+ * - req.params.device_id: Device identifier
+ * - req.body: Update data (validated by UpdateDeviceSessionSchema)
+ * - req.headers['x-request-id']: Request identifier for tracing
+ *
+ * Returns:
+ * - 200: Updated device session object
+ * - 400: Invalid request or validation error
+ * - 404: Device session not found
+ * - 500: Server error
  */
 router.patch('/:device_id', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const requestId = req.headers['x-request-id'] as string;
@@ -140,20 +273,19 @@ router.patch('/:device_id', authMiddleware, async (req: AuthenticatedRequest, re
 
   try {
     if (!device_id) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'device_id is required',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.DEVICE_ID_REQUIRED,
         requestId,
       });
     }
 
-    // Validate request body
     const validation = UpdateDeviceSessionSchema.safeParse(req.body);
 
     if (!validation.success) {
-      return res.status(400).json({
-        error: 'validation_error',
-        message: 'Invalid request body',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.VALIDATION_ERROR,
+        message: ERROR_MESSAGES.INVALID_REQUEST_BODY,
         details: validation.error.issues,
         requestId,
       });
@@ -162,16 +294,15 @@ router.patch('/:device_id', authMiddleware, async (req: AuthenticatedRequest, re
     const updates = validation.data;
 
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'No fields to update',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.NO_FIELDS_TO_UPDATE,
         requestId,
       });
     }
 
-    // Check if device session exists
     const { data: existingSession, error: fetchError } = await supabaseAdmin
-      .from('device_sessions')
+      .from(TABLE_DEVICE_SESSIONS)
       .select('id')
       .eq('device_id', device_id)
       .maybeSingle();
@@ -179,26 +310,25 @@ router.patch('/:device_id', authMiddleware, async (req: AuthenticatedRequest, re
     if (fetchError) {
       logger.error(
         { error: fetchError, deviceId: device_id, requestId },
-        'Error checking device session',
+        LOG_MESSAGES.ERROR_CHECKING_DEVICE_SESSION,
       );
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to check device session',
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_CHECK_DEVICE_SESSION,
         requestId,
       });
     }
 
     if (!existingSession) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Device session not found',
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.DEVICE_SESSION_NOT_FOUND,
         requestId,
       });
     }
 
-    // Update the session
     const { data: updatedSession, error: updateError } = await supabaseAdmin
-      .from('device_sessions')
+      .from(TABLE_DEVICE_SESSIONS)
       .update(updates)
       .eq('device_id', device_id)
       .select()
@@ -207,49 +337,67 @@ router.patch('/:device_id', authMiddleware, async (req: AuthenticatedRequest, re
     if (updateError) {
       logger.error(
         { error: updateError, deviceId: device_id, requestId },
-        'Error updating device session',
+        LOG_MESSAGES.ERROR_UPDATING_DEVICE_SESSION,
       );
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to update device session',
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_UPDATE_DEVICE_SESSION,
         requestId,
       });
     }
 
-    return res.status(200).json(updatedSession);
+    return res.status(HTTP_STATUS_OK).json(updatedSession);
   } catch (error) {
     if (error instanceof ZodError) {
-      return res.status(400).json({
-        error: 'validation_error',
-        message: 'Invalid request body',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.VALIDATION_ERROR,
+        message: ERROR_MESSAGES.INVALID_REQUEST_BODY,
         details: error.issues,
         requestId,
       });
     }
 
-    logger.error({ error, deviceId: device_id, requestId }, 'Error in update device session');
-    return res.status(500).json({
-      error: 'server_error',
-      message: 'Internal server error',
+    logger.error(
+      { error, deviceId: device_id, requestId },
+      LOG_MESSAGES.ERROR_UPDATE_DEVICE_SESSION,
+    );
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.SERVER_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       requestId,
     });
   }
 });
 
 /**
- * GET /:device_id/connections
- * Get all WebSocket connections for a specific device
+ * Route: GET /:device_id/connections
+ * Description:
+ * - Get all WebSocket connections for a specific device
+ * - Supports pagination with limit and offset
+ * - Requires authentication via authMiddleware
+ *
+ * Parameters:
+ * - req.params.device_id: Device identifier
+ * - req.query.limit (string, optional): Number of results per page (default: 50, max: 100)
+ * - req.query.offset (string, optional): Number of results to skip (default: 0)
+ * - req.headers['x-request-id']: Request identifier for tracing
+ *
+ * Returns:
+ * - 200: Paginated WebSocket connections with metadata
+ * - 400: Invalid request or pagination parameters
+ * - 500: Server error
  */
 router.get('/:device_id/connections', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const requestId = req.headers['x-request-id'] as string;
   const { device_id } = req.params;
-  const { limit = '50', offset = '0' } = req.query;
+  const { limit = String(DEFAULT_PAGINATION_LIMIT), offset = String(DEFAULT_PAGINATION_OFFSET) } =
+    req.query;
 
   try {
     if (!device_id) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'device_id is required',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.DEVICE_ID_REQUIRED,
         requestId,
       });
     }
@@ -257,18 +405,18 @@ router.get('/:device_id/connections', authMiddleware, async (req: AuthenticatedR
     const limitNum = parseInt(limit as string, 10);
     const offsetNum = parseInt(offset as string, 10);
 
-    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'Limit must be between 1 and 100',
+    if (isNaN(limitNum) || limitNum < MIN_PAGINATION_LIMIT || limitNum > MAX_PAGINATION_LIMIT) {
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.LIMIT_MUST_BE_BETWEEN_1_AND_100,
         requestId,
       });
     }
 
-    if (isNaN(offsetNum) || offsetNum < 0) {
-      return res.status(400).json({
-        error: 'invalid_request',
-        message: 'Offset must be non-negative',
+    if (isNaN(offsetNum) || offsetNum < MIN_PAGINATION_OFFSET) {
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_REQUEST,
+        message: ERROR_MESSAGES.OFFSET_MUST_BE_NON_NEGATIVE,
         requestId,
       });
     }
@@ -278,69 +426,83 @@ router.get('/:device_id/connections', authMiddleware, async (req: AuthenticatedR
       error,
       count,
     } = await supabaseAdmin
-      .from('websocket_connections')
-      .select('*', { count: 'exact' })
+      .from(TABLE_WEBSOCKET_CONNECTIONS)
+      .select(SELECT_ALL, { count: 'exact' })
       .eq('device_id', device_id)
       .order('connected_at', { ascending: false })
       .range(offsetNum, offsetNum + limitNum - 1);
 
     if (error) {
-      logger.error({ error, deviceId: device_id, requestId }, 'Error fetching device connections');
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to fetch device connections',
+      logger.error(
+        { error, deviceId: device_id, requestId },
+        LOG_MESSAGES.ERROR_FETCHING_DEVICE_CONNECTIONS,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_DEVICE_CONNECTIONS,
         requestId,
       });
     }
 
-    return res.status(200).json({
+    return res.status(HTTP_STATUS_OK).json({
       connections: connections || [],
       total: count || 0,
       limit: limitNum,
       offset: offsetNum,
     });
   } catch (error) {
-    logger.error({ error, deviceId: device_id, requestId }, 'Error in get device connections');
-    return res.status(500).json({
-      error: 'server_error',
-      message: 'Internal server error',
+    logger.error(
+      { error, deviceId: device_id, requestId },
+      LOG_MESSAGES.ERROR_GET_DEVICE_CONNECTIONS,
+    );
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.SERVER_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       requestId,
     });
   }
 });
 
 /**
- * GET /stats/summary
- * Get summary statistics for all device sessions
+ * Route: GET /stats/summary
+ * Description:
+ * - Get summary statistics for all device sessions
+ * - Calculates total devices, connections, reconnections, and rates
+ * - Requires authentication via authMiddleware
+ *
+ * Parameters:
+ * - req.headers['x-request-id']: Request identifier for tracing
+ *
+ * Returns:
+ * - 200: Device session statistics summary
+ * - 500: Server error
  */
 router.get('/stats/summary', authMiddleware, async (req: AuthenticatedRequest, res) => {
   const requestId = req.headers['x-request-id'] as string;
 
   try {
-    // Get total device sessions count
     const { count: totalDevices, error: countError } = await supabaseAdmin
-      .from('device_sessions')
+      .from(TABLE_DEVICE_SESSIONS)
       .select('id', { count: 'exact', head: true });
 
     if (countError) {
-      logger.error({ error: countError, requestId }, 'Error fetching device count');
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to fetch device statistics',
+      logger.error({ error: countError, requestId }, LOG_MESSAGES.ERROR_FETCHING_DEVICE_COUNT);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_DEVICE_STATISTICS,
         requestId,
       });
     }
 
-    // Get total connections and reconnections
     const { data: aggregates, error: aggError } = await supabaseAdmin
-      .from('device_sessions')
+      .from(TABLE_DEVICE_SESSIONS)
       .select('total_connections, total_reconnections');
 
     if (aggError) {
-      logger.error({ error: aggError, requestId }, 'Error fetching aggregates');
-      return res.status(500).json({
-        error: 'database_error',
-        message: 'Failed to fetch connection statistics',
+      logger.error({ error: aggError, requestId }, LOG_MESSAGES.ERROR_FETCHING_AGGREGATES);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DATABASE_ERROR,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_CONNECTION_STATISTICS,
         requestId,
       });
     }
@@ -350,25 +512,33 @@ router.get('/stats/summary', authMiddleware, async (req: AuthenticatedRequest, r
     const totalReconnections =
       aggregates?.reduce((sum, session) => sum + (session.total_reconnections || 0), 0) || 0;
 
-    return res.status(200).json({
+    return res.status(HTTP_STATUS_OK).json({
       total_devices: totalDevices || 0,
       total_connections: totalConnections,
       total_reconnections: totalReconnections,
       average_connections_per_device: totalDevices
-        ? (totalConnections / totalDevices).toFixed(2)
-        : '0.00',
+        ? (totalConnections / totalDevices).toFixed(DECIMAL_PLACES)
+        : DEFAULT_ZERO_STRING,
       reconnection_rate: totalConnections
-        ? ((totalReconnections / totalConnections) * 100).toFixed(2)
-        : '0.00',
+        ? ((totalReconnections / totalConnections) * PERCENTAGE_MULTIPLIER).toFixed(DECIMAL_PLACES)
+        : DEFAULT_ZERO_STRING,
     });
   } catch (error) {
-    logger.error({ error, requestId }, 'Error getting device stats');
-    return res.status(500).json({
-      error: 'server_error',
-      message: 'Internal server error',
+    logger.error({ error, requestId }, LOG_MESSAGES.ERROR_GETTING_DEVICE_STATS);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.SERVER_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       requestId,
     });
   }
 });
 
+//----------------------------------------------------
+// 5. Helper Functions
+//----------------------------------------------------
+// No helper functions - all logic in route handlers
+
+//----------------------------------------------------
+// 6. Export
+//----------------------------------------------------
 export default router;
