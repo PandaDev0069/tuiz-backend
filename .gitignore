@@ -1,3 +1,21 @@
+# ====================================================
+# File Name   : .gitignore
+# Project     : TUIZ
+# Author      : PandaDev0069 / Panta Aashish
+# Created     : 2025-08-19
+# Last Update : 2025-08-25
+#
+# Description:
+# - Git ignore patterns for TUIZ backend
+# - Excludes build outputs, dependencies, and sensitive files
+# - Prevents commit of environment variables and logs
+#
+# Notes:
+# - Supabase local studio files ignored
+# - VS Code specific folders preserved selectively
+# - GitHub Prompts directory excluded from version control
+# ====================================================
+
 # Node / package managers
 node_modules/
 pnpm-lock.yaml

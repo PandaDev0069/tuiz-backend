@@ -1,3 +1,22 @@
+# ====================================================
+# File Name   : render.yaml
+# Project     : TUIZ
+# Author      : PandaDev0069 / Panta Aashish
+# Created     : 2025-08-20
+# Last Update : 2026-08-23
+#
+# Description:
+# - Render.com deployment configuration for TUIZ backend
+# - Free tier web service with health check monitoring
+# - Production environment with CORS wildcard support
+#
+# Notes:
+# - Build ignores scripts to prevent installation issues
+# - CLIENT_ORIGINS includes Vercel wildcards for preview deployments
+# - Health check endpoint: /health
+# - Default port: 10000
+# ====================================================
+
 services:
   - type: web
     name: tuiz-backend
@@ -14,5 +33,4 @@ services:
       - key: LOG_LEVEL
         value: info
       - key: CLIENT_ORIGINS
-        # Allow local dev, the specific Vercel deployment, and any Vercel subdomain via wildcard
         value: 'https://tuiz-info-king.vercel.app,http://localhost:3000,http://localhost:5173,*.vercel.app,*.onrender.com'

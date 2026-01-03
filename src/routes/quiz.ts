@@ -1,5 +1,27 @@
-// src/routes/quiz.ts
+// ====================================================
+// File Name   : quiz.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-09-10
+// Last Update : 2025-09-17
+
+// Description:
+// - Express routes for quiz CRUD operations
+// - Handles quiz creation, updates, deletion, and querying
+// - Manages quiz image cleanup and status transitions
+// - Supports quiz editing workflow (draft/publish)
+
+// Notes:
+// - All routes require authentication via authMiddleware
+// - Images are cleaned up before quiz deletion
+// - Quiz status can be draft or published
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import express from 'express';
+
 import { supabaseAdmin, generateQuizCode } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types/auth';
@@ -17,172 +39,127 @@ import {
 import { logger } from '../utils/logger';
 import { validateRequest, validateQueryParams } from '../utils/quizValidation';
 
-const router = express.Router();
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const TABLE_QUIZ_SETS = 'quiz_sets';
+const TABLE_QUESTIONS = 'questions';
+const TABLE_ANSWERS = 'answers';
+const STORAGE_BUCKET_QUIZ_IMAGES = 'quiz-images';
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
+const COLUMN_ID = 'id';
+const COLUMN_USER_ID = 'user_id';
+const COLUMN_QUESTION_SET_ID = 'question_set_id';
+const COLUMN_QUESTION_ID = 'question_id';
+const COLUMN_THUMBNAIL_URL = 'thumbnail_url';
+const COLUMN_IMAGE_URL = 'image_url';
+const COLUMN_EXPLANATION_IMAGE_URL = 'explanation_image_url';
+const COLUMN_ORDER_INDEX = 'order_index';
+const COLUMN_IS_PUBLIC = 'is_public';
+const COLUMN_CATEGORY = 'category';
+const COLUMN_DIFFICULTY_LEVEL = 'difficulty_level';
+const COLUMN_STATUS = 'status';
+const SELECT_ALL = '*';
 
-/**
- * Clean up all images related to a quiz before hard deletion
- */
-async function cleanupQuizImages(quizId: string): Promise<void> {
-  try {
-    logger.info({ quizId }, 'Starting image cleanup for quiz');
+const STATUS_DRAFT = 'draft';
+const STATUS_PUBLISHED = 'published';
 
-    const imagePaths = await collectAllQuizImagePaths(quizId);
-    await deleteImagesFromStorage(quizId, imagePaths);
-  } catch (error) {
-    logger.error({ error, quizId }, 'Exception during quiz image cleanup');
-    // Don't throw - we want the quiz deletion to proceed even if image cleanup fails
-  }
-}
+const HTTP_STATUS_BAD_REQUEST = 400;
+const HTTP_STATUS_CREATED = 201;
+const HTTP_STATUS_NO_CONTENT = 204;
+const HTTP_STATUS_FORBIDDEN = 403;
+const HTTP_STATUS_NOT_FOUND = 404;
+const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
 
-/**
- * Collect all image paths associated with a quiz
- */
-async function collectAllQuizImagePaths(quizId: string): Promise<string[]> {
-  const imagePaths: string[] = [];
+const DEFAULT_TOTAL_QUESTIONS = 0;
+const DEFAULT_TIMES_PLAYED = 0;
+const DEFAULT_PAGE = 1;
+const DEFAULT_LIMIT = 10;
+const DEFAULT_MAX_PLAYERS = 100;
+const DEFAULT_COUNT = 0;
+const MIN_QUESTIONS_FOR_PUBLISH = 1;
+const PAGINATION_FIRST_PAGE = 1;
 
-  // Collect quiz thumbnail
-  const thumbnailPath = await getQuizThumbnailPath(quizId);
-  if (thumbnailPath) imagePaths.push(thumbnailPath);
+const QUERY_PARAM_INCLUDE = 'include';
+const QUERY_VALUE_INCLUDE_QUESTIONS_ANSWERS = 'questions,answers';
+const QUERY_VALUE_TRUE = 'true';
+const SORT_ORDER_ASC = 'asc';
+const DEFAULT_SORT_BY = 'created_at';
+const DEFAULT_SORT_ORDER = 'desc';
 
-  // Collect question images
-  const questionImagePaths = await getQuestionImagePaths(quizId);
-  imagePaths.push(...questionImagePaths);
+const STORAGE_URL_REGEX = /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/quiz-images\/(.+)$/;
 
-  // Collect answer images
-  const answerImagePaths = await getAnswerImagePaths(quizId);
-  imagePaths.push(...answerImagePaths);
+const ERROR_CODES = {
+  CREATION_FAILED: 'creation_failed',
+  INTERNAL_ERROR: 'internal_error',
+  NOT_FOUND: 'not_found',
+  FORBIDDEN: 'forbidden',
+  UPDATE_FAILED: 'update_failed',
+  DELETE_FAILED: 'delete_failed',
+  FETCH_FAILED: 'fetch_failed',
+  VALIDATION_ERROR: 'validation_error',
+} as const;
 
-  return imagePaths;
-}
+const ERROR_MESSAGES = {
+  FAILED_TO_CREATE_QUIZ: 'Failed to create quiz',
+  INTERNAL_SERVER_ERROR: 'Internal server error',
+  QUIZ_NOT_FOUND: 'Quiz not found',
+  CAN_ONLY_EDIT_OWN_QUIZZES: 'You can only edit your own quizzes',
+  CAN_ONLY_UPDATE_OWN_QUIZZES: 'You can only update your own quizzes',
+  CAN_ONLY_DELETE_OWN_QUIZZES: 'You can only delete your own quizzes',
+  FAILED_TO_SET_DRAFT: 'Failed to set quiz to draft',
+  FAILED_TO_UPDATE_QUIZ: 'Failed to update quiz',
+  FAILED_TO_DELETE_QUIZ: 'Failed to delete quiz',
+  FAILED_TO_FETCH_QUIZZES: 'Failed to fetch quizzes',
+  ACCESS_DENIED: 'Access denied',
+  FAILED_TO_FETCH_QUESTIONS: 'Failed to fetch questions',
+  QUIZ_NOT_FOUND_NO_PERMISSION: 'Quiz not found or you do not have permission to edit it',
+  FAILED_TO_FETCH_QUESTIONS_FOR_EDIT: 'Failed to fetch questions for editing',
+  FAILED_TO_SET_DRAFT_STATUS: 'Failed to set quiz to draft status',
+  QUIZ_NOT_FOUND_NO_PERMISSION_PUBLISH:
+    'Quiz not found or you do not have permission to publish it',
+  FAILED_TO_CHECK_QUESTIONS: 'Failed to check quiz questions',
+  QUIZ_MUST_HAVE_QUESTIONS: 'Quiz must have at least one question to be published',
+  FAILED_TO_PUBLISH_QUIZ: 'Failed to publish quiz',
+} as const;
 
-/**
- * Get quiz thumbnail path
- */
-async function getQuizThumbnailPath(quizId: string): Promise<string | null> {
-  const { data: quizData } = await supabaseAdmin
-    .from('quiz_sets')
-    .select('thumbnail_url')
-    .eq('id', quizId)
-    .single();
+const LOG_MESSAGES = {
+  STARTING_IMAGE_CLEANUP: 'Starting image cleanup for quiz',
+  EXCEPTION_DURING_CLEANUP: 'Exception during quiz image cleanup',
+  ERROR_DELETING_IMAGES: 'Error deleting quiz images from storage',
+  SUCCESSFULLY_DELETED_IMAGES: 'Successfully deleted quiz images',
+  ERROR_FETCHING_QUIZ_BY_ID: 'Error fetching quiz by ID',
+  EXCEPTION_IN_GET_QUIZ_BY_ID: 'Exception in getQuizById',
+  ERROR_FETCHING_QUESTIONS_FOR_EDIT: 'Error fetching questions for edit',
+  EXCEPTION_IN_GET_COMPLETE_QUIZ: 'Exception in getCompleteQuizForEdit',
+  ERROR_CREATING_QUIZ: 'Error creating quiz',
+  QUIZ_CREATED_SUCCESSFULLY: 'Quiz created successfully',
+  EXCEPTION_IN_POST_QUIZ: 'Exception in POST /quiz',
+  EXCEPTION_IN_GET_QUIZ_ID: 'Exception in GET /quiz/:id',
+  ERROR_SETTING_QUIZ_TO_DRAFT: 'Error setting quiz to draft',
+  QUIZ_SET_TO_DRAFT: 'Quiz set to draft for editing',
+  EXCEPTION_IN_PUT_START_EDIT: 'Exception in PUT /quiz/:id/start-edit',
+  ERROR_UPDATING_QUIZ: 'Error updating quiz',
+  QUIZ_UPDATED_SUCCESSFULLY: 'Quiz updated successfully',
+  EXCEPTION_IN_PUT_QUIZ: 'Exception in PUT /quiz/:id',
+  FAILED_TO_CLEANUP_IMAGES: 'Failed to cleanup images, proceeding with quiz deletion',
+  ERROR_DELETING_QUIZ: 'Error deleting quiz',
+  QUIZ_AND_IMAGES_DELETED: 'Quiz and associated images deleted successfully',
+  EXCEPTION_IN_DELETE_QUIZ: 'Exception in DELETE /quiz/:id',
+  ERROR_FETCHING_QUIZZES: 'Error fetching quizzes',
+  EXCEPTION_IN_GET_QUIZ: 'Exception in GET /quiz',
+  ERROR_FETCHING_QUESTIONS: 'Error fetching questions',
+  QUIZ_DATA_FETCHED_FOR_EDIT: 'Quiz data fetched for editing',
+  EXCEPTION_IN_GET_QUIZ_EDIT: 'Exception in GET /quiz/:id/edit',
+  EXCEPTION_IN_PATCH_DRAFT: 'Exception in PATCH /quiz/:id/draft',
+  ERROR_CHECKING_QUESTIONS: 'Error checking questions',
+  QUIZ_PUBLISHED_SUCCESSFULLY: 'Quiz published successfully',
+  EXCEPTION_IN_PATCH_PUBLISH: 'Exception in PATCH /quiz/:id/publish',
+} as const;
 
-  if (!quizData?.thumbnail_url) return null;
-
-  return extractStoragePathFromUrl(quizData.thumbnail_url);
-}
-
-/**
- * Get all question image paths for a quiz
- */
-async function getQuestionImagePaths(quizId: string): Promise<string[]> {
-  const { data: questionsData } = await supabaseAdmin
-    .from('questions')
-    .select('id, image_url, explanation_image_url')
-    .eq('question_set_id', quizId);
-
-  if (!questionsData) return [];
-
-  const imagePaths: string[] = [];
-  for (const question of questionsData) {
-    if (question.image_url) {
-      const imagePath = extractStoragePathFromUrl(question.image_url);
-      if (imagePath) imagePaths.push(imagePath);
-    }
-    if (question.explanation_image_url) {
-      const explanationPath = extractStoragePathFromUrl(question.explanation_image_url);
-      if (explanationPath) imagePaths.push(explanationPath);
-    }
-  }
-
-  return imagePaths;
-}
-
-/**
- * Get all answer image paths for a quiz
- */
-async function getAnswerImagePaths(quizId: string): Promise<string[]> {
-  // First get question IDs for this quiz
-  const { data: questionsData } = await supabaseAdmin
-    .from('questions')
-    .select('id')
-    .eq('question_set_id', quizId);
-
-  if (!questionsData || questionsData.length === 0) return [];
-
-  const questionIds = questionsData.map((q) => q.id);
-  const { data: answersData } = await supabaseAdmin
-    .from('answers')
-    .select('image_url')
-    .in('question_id', questionIds);
-
-  if (!answersData) return [];
-
-  const imagePaths: string[] = [];
-  for (const answer of answersData) {
-    if (answer.image_url) {
-      const answerPath = extractStoragePathFromUrl(answer.image_url);
-      if (answerPath) imagePaths.push(answerPath);
-    }
-  }
-
-  return imagePaths;
-}
-
-/**
- * Delete images from storage
- */
-async function deleteImagesFromStorage(quizId: string, imagePaths: string[]): Promise<void> {
-  if (imagePaths.length === 0) return;
-
-  const { error: deleteError } = await supabaseAdmin.storage.from('quiz-images').remove(imagePaths);
-
-  if (deleteError) {
-    logger.error(
-      { error: deleteError, quizId, imagePaths },
-      'Error deleting quiz images from storage',
-    );
-  } else {
-    logger.info({ quizId, deletedCount: imagePaths.length }, 'Successfully deleted quiz images');
-  }
-}
-
-/**
- * Extract storage path from Supabase storage URL
- */
-function extractStoragePathFromUrl(imageUrl: string): string | null {
-  if (!imageUrl) return null;
-
-  // Extract path from Supabase storage URL
-  // URL format: https://[project].supabase.co/storage/v1/object/public/quiz-images/[path]
-  const match = imageUrl.match(
-    /^https?:\/\/[^/]+\/storage\/v1\/object\/public\/quiz-images\/(.+)$/,
-  );
-  return match ? match[1] : null;
-}
-
-async function getQuizById(quizId: string, userId?: string): Promise<QuizSetResponse | null> {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('quiz_sets')
-      .select('*')
-      .eq('id', quizId)
-      .maybeSingle();
-
-    if (error) {
-      logger.error({ error, quizId, userId }, 'Error fetching quiz by ID');
-      return null;
-    }
-
-    return data as QuizSetResponse;
-  } catch (error) {
-    logger.error({ error, quizId, userId }, 'Exception in getQuizById');
-    return null;
-  }
-}
-
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
 interface QuestionWithAnswers {
   id: string;
   question_text: string;
@@ -206,20 +183,1020 @@ interface QuestionWithAnswers {
   }[];
 }
 
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
+const router = express.Router();
+
+/**
+ * Route: POST /
+ * Description:
+ * - Create a new quiz
+ * - Generates unique quiz code and sets initial status to draft
+ *
+ * Parameters:
+ * - req.body: Quiz data (validated by CreateQuizSetSchema)
+ *
+ * Returns:
+ * - JSON response with created quiz object
+ */
+router.post(
+  '/',
+  authMiddleware,
+  validateRequest(CreateQuizSetSchema),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const quizData = req.body as CreateQuizSetInput;
+
+      const quizCode = await generateQuizCode();
+
+      const insertData = {
+        user_id: userId,
+        title: quizData.title,
+        description: quizData.description,
+        thumbnail_url: quizData.thumbnail_url || null,
+        is_public: quizData.is_public,
+        difficulty_level: quizData.difficulty_level,
+        category: quizData.category,
+        total_questions: DEFAULT_TOTAL_QUESTIONS,
+        times_played: DEFAULT_TIMES_PLAYED,
+        status: STATUS_DRAFT,
+        tags: quizData.tags,
+        play_settings: {
+          code: quizCode,
+          show_question_only: quizData.play_settings?.show_question_only ?? true,
+          show_explanation: quizData.play_settings?.show_explanation ?? true,
+          time_bonus: quizData.play_settings?.time_bonus ?? false,
+          streak_bonus: quizData.play_settings?.streak_bonus ?? false,
+          show_correct_answer: quizData.play_settings?.show_correct_answer ?? true,
+          max_players: quizData.play_settings?.max_players ?? DEFAULT_MAX_PLAYERS,
+        },
+      };
+
+      const { data, error } = await supabaseAdmin
+        .from(TABLE_QUIZ_SETS)
+        .insert(insertData)
+        .select()
+        .single();
+
+      if (error) {
+        logger.error({ error, userId, quizData }, LOG_MESSAGES.ERROR_CREATING_QUIZ);
+        return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+          error: ERROR_CODES.CREATION_FAILED,
+          message: ERROR_MESSAGES.FAILED_TO_CREATE_QUIZ,
+        } as QuizError);
+      }
+
+      logger.info({ quizId: data.id, userId }, LOG_MESSAGES.QUIZ_CREATED_SUCCESSFULLY);
+
+      res.status(HTTP_STATUS_CREATED).json({
+        id: data.id,
+        user_id: data.user_id,
+        title: data.title,
+        description: data.description,
+        thumbnail_url: data.thumbnail_url,
+        is_public: data.is_public,
+        difficulty_level: data.difficulty_level,
+        category: data.category,
+        total_questions: data.total_questions,
+        times_played: data.times_played,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        status: data.status,
+        tags: data.tags,
+        last_played_at: data.last_played_at,
+        play_settings: data.play_settings,
+        cloned_from: data.cloned_from,
+      } as QuizSetResponse);
+    } catch (error) {
+      logger.error({ error }, LOG_MESSAGES.EXCEPTION_IN_POST_QUIZ);
+      res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.INTERNAL_ERROR,
+        message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      } as QuizError);
+    }
+  },
+);
+
+/**
+ * Route: GET /:id
+ * Description:
+ * - Get quiz by ID
+ * - Optionally includes questions and answers if include=questions,answers
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ * - req.query.include: Optional include parameter
+ *
+ * Returns:
+ * - JSON response with quiz data
+ */
+router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+    const { [QUERY_PARAM_INCLUDE]: include } = req.query;
+
+    const quiz = await getQuizById(id, userId);
+
+    if (!quiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+      } as QuizError);
+    }
+
+    if (include === QUERY_VALUE_INCLUDE_QUESTIONS_ANSWERS) {
+      const completeQuiz = await getCompleteQuizForEdit(id, userId);
+      if (!completeQuiz) {
+        return res.status(HTTP_STATUS_NOT_FOUND).json({
+          error: ERROR_CODES.NOT_FOUND,
+          message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+        } as QuizError);
+      }
+      return res.json(completeQuiz);
+    }
+
+    res.json(quiz);
+  } catch (error) {
+    logger.error({ error, quizId: req.params.id }, LOG_MESSAGES.EXCEPTION_IN_GET_QUIZ_ID);
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: PUT /:id/start-edit
+ * Description:
+ * - Set quiz to draft status when editing starts
+ * - Verifies quiz ownership before allowing edit
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - JSON response with updated quiz status
+ */
+router.put('/:id/start-edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const existingQuiz = await getQuizById(id, userId);
+    if (!existingQuiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+      } as QuizError);
+    }
+
+    if (existingQuiz.user_id !== userId) {
+      return res.status(HTTP_STATUS_FORBIDDEN).json({
+        error: ERROR_CODES.FORBIDDEN,
+        message: ERROR_MESSAGES.CAN_ONLY_EDIT_OWN_QUIZZES,
+      } as QuizError);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(TABLE_QUIZ_SETS)
+      .update({
+        status: STATUS_DRAFT,
+        updated_at: new Date().toISOString(),
+      })
+      .eq(COLUMN_ID, id)
+      .eq(COLUMN_USER_ID, userId)
+      .select()
+      .single();
+
+    if (error) {
+      logger.error({ error, quizId: id, userId }, LOG_MESSAGES.ERROR_SETTING_QUIZ_TO_DRAFT);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.UPDATE_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_SET_DRAFT,
+      } as QuizError);
+    }
+
+    logger.info({ quizId: id, userId }, LOG_MESSAGES.QUIZ_SET_TO_DRAFT);
+
+    res.json({
+      id: data.id,
+      status: data.status,
+      updated_at: data.updated_at,
+    });
+  } catch (error) {
+    logger.error({ error, quizId: req.params.id }, LOG_MESSAGES.EXCEPTION_IN_PUT_START_EDIT);
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: PUT /:id
+ * Description:
+ * - Update quiz data
+ * - Verifies quiz ownership before allowing update
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ * - req.body: Update data (validated by UpdateQuizSetSchema)
+ *
+ * Returns:
+ * - JSON response with updated quiz object
+ */
+router.put(
+  '/:id',
+  authMiddleware,
+  validateRequest(UpdateQuizSetSchema),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const userId = req.user!.id;
+      const updateData = req.body as UpdateQuizSetInput;
+
+      const existingQuiz = await getQuizById(id, userId);
+      if (!existingQuiz) {
+        return res.status(HTTP_STATUS_NOT_FOUND).json({
+          error: ERROR_CODES.NOT_FOUND,
+          message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+        } as QuizError);
+      }
+
+      if (existingQuiz.user_id !== userId) {
+        return res.status(HTTP_STATUS_FORBIDDEN).json({
+          error: ERROR_CODES.FORBIDDEN,
+          message: ERROR_MESSAGES.CAN_ONLY_UPDATE_OWN_QUIZZES,
+        } as QuizError);
+      }
+
+      const updatePayload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (updateData.title !== undefined) updatePayload.title = updateData.title;
+      if (updateData.description !== undefined) updatePayload.description = updateData.description;
+      if (updateData.thumbnail_url !== undefined)
+        updatePayload.thumbnail_url = updateData.thumbnail_url;
+      if (updateData.is_public !== undefined) updatePayload.is_public = updateData.is_public;
+      if (updateData.difficulty_level !== undefined)
+        updatePayload.difficulty_level = updateData.difficulty_level;
+      if (updateData.category !== undefined) updatePayload.category = updateData.category;
+      if (updateData.tags !== undefined) updatePayload.tags = updateData.tags;
+      if (updateData.status !== undefined) updatePayload.status = updateData.status;
+      if (updateData.play_settings !== undefined) {
+        updatePayload.play_settings = {
+          ...existingQuiz.play_settings,
+          ...updateData.play_settings,
+        };
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from(TABLE_QUIZ_SETS)
+        .update(updatePayload)
+        .eq(COLUMN_ID, id)
+        .eq(COLUMN_USER_ID, userId)
+        .select()
+        .single();
+
+      if (error) {
+        logger.error({ error, quizId: id, userId, updateData }, LOG_MESSAGES.ERROR_UPDATING_QUIZ);
+        return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+          error: ERROR_CODES.UPDATE_FAILED,
+          message: ERROR_MESSAGES.FAILED_TO_UPDATE_QUIZ,
+        } as QuizError);
+      }
+
+      logger.info({ quizId: id, userId }, LOG_MESSAGES.QUIZ_UPDATED_SUCCESSFULLY);
+
+      res.json({
+        id: data.id,
+        user_id: data.user_id,
+        title: data.title,
+        description: data.description,
+        thumbnail_url: data.thumbnail_url,
+        is_public: data.is_public,
+        difficulty_level: data.difficulty_level,
+        category: data.category,
+        total_questions: data.total_questions,
+        times_played: data.times_played,
+        created_at: data.created_at,
+        updated_at: data.updated_at,
+        status: data.status,
+        tags: data.tags,
+        last_played_at: data.last_played_at,
+        play_settings: data.play_settings,
+        cloned_from: data.cloned_from,
+      } as QuizSetResponse);
+    } catch (error) {
+      logger.error({ error, quizId: req.params.id }, LOG_MESSAGES.EXCEPTION_IN_PUT_QUIZ);
+      res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.INTERNAL_ERROR,
+        message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      } as QuizError);
+    }
+  },
+);
+
+/**
+ * Route: DELETE /:id
+ * Description:
+ * - Delete quiz and associated images
+ * - Verifies quiz ownership before allowing deletion
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - 204 No Content on success
+ */
+router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user!.id;
+
+    const existingQuiz = await getQuizById(id, userId);
+    if (!existingQuiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+      } as QuizError);
+    }
+
+    if (existingQuiz.user_id !== userId) {
+      return res.status(HTTP_STATUS_FORBIDDEN).json({
+        error: ERROR_CODES.FORBIDDEN,
+        message: ERROR_MESSAGES.CAN_ONLY_DELETE_OWN_QUIZZES,
+      } as QuizError);
+    }
+
+    try {
+      await cleanupQuizImages(id);
+    } catch (error) {
+      logger.error({ error, quizId: id }, LOG_MESSAGES.FAILED_TO_CLEANUP_IMAGES);
+    }
+
+    const { error } = await supabaseAdmin
+      .from(TABLE_QUIZ_SETS)
+      .delete()
+      .eq(COLUMN_ID, id)
+      .eq(COLUMN_USER_ID, userId);
+
+    if (error) {
+      logger.error({ error, quizId: id, userId }, LOG_MESSAGES.ERROR_DELETING_QUIZ);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.DELETE_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_DELETE_QUIZ,
+      } as QuizError);
+    }
+
+    logger.info({ quizId: id, userId }, LOG_MESSAGES.QUIZ_AND_IMAGES_DELETED);
+
+    res.status(HTTP_STATUS_NO_CONTENT).send();
+  } catch (error) {
+    logger.error({ error, quizId: req.params.id }, LOG_MESSAGES.EXCEPTION_IN_DELETE_QUIZ);
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: GET /
+ * Description:
+ * - List quizzes with filtering, sorting, and pagination
+ * - Supports filtering by category, difficulty, status, and search
+ *
+ * Parameters:
+ * - req.query: Query parameters (validated by QuizQuerySchema)
+ *
+ * Returns:
+ * - JSON response with paginated quiz list
+ */
+router.get(
+  '/',
+  authMiddleware,
+  validateQueryParams(QuizQuerySchema),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const {
+        page = DEFAULT_PAGE,
+        limit = DEFAULT_LIMIT,
+        category,
+        difficulty,
+        status,
+        search,
+        is_public,
+        sort_by = DEFAULT_SORT_BY,
+        sort_order = DEFAULT_SORT_ORDER,
+      } = req.validatedQuery as QuizQueryParams;
+
+      let query = supabaseAdmin.from(TABLE_QUIZ_SETS).select(SELECT_ALL, { count: 'exact' });
+
+      if (is_public === QUERY_VALUE_TRUE) {
+        query = query.eq(COLUMN_IS_PUBLIC, true);
+      } else {
+        query = query.eq(COLUMN_USER_ID, userId);
+      }
+
+      if (category) query = query.eq(COLUMN_CATEGORY, category);
+      if (difficulty) query = query.eq(COLUMN_DIFFICULTY_LEVEL, difficulty);
+      if (status) query = query.eq(COLUMN_STATUS, status);
+      if (search) {
+        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
+      }
+
+      query = query.order(sort_by, { ascending: sort_order === SORT_ORDER_ASC });
+      const offset = (Number(page) - 1) * Number(limit);
+      const { data, error, count } = await query.range(offset, offset + Number(limit) - 1);
+
+      if (error) {
+        logger.error(
+          { error, userId, query: req.validatedQuery },
+          LOG_MESSAGES.ERROR_FETCHING_QUIZZES,
+        );
+        return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+          error: ERROR_CODES.FETCH_FAILED,
+          message: ERROR_MESSAGES.FAILED_TO_FETCH_QUIZZES,
+        } as QuizError);
+      }
+
+      const totalPages = Math.ceil((count || DEFAULT_COUNT) / Number(limit));
+
+      const response: PaginatedResponse<QuizSetResponse> = {
+        data: (data || []) as QuizSetResponse[],
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: count || DEFAULT_COUNT,
+          total_pages: totalPages,
+          has_next: Number(page) < totalPages,
+          has_prev: Number(page) > PAGINATION_FIRST_PAGE,
+        },
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error({ error, userId: req.user?.id }, LOG_MESSAGES.EXCEPTION_IN_GET_QUIZ);
+      res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.INTERNAL_ERROR,
+        message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      } as QuizError);
+    }
+  },
+);
+
+/**
+ * Route: GET /:id
+ * Description:
+ * - Get single quiz by ID with questions and answers
+ * - Checks ownership or public access
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - JSON response with complete quiz data including questions
+ */
+router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const quizId = req.params.id;
+
+    const quiz = await getQuizById(quizId, userId);
+
+    if (!quiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND,
+      } as QuizError);
+    }
+
+    if (quiz.user_id !== userId && !quiz.is_public) {
+      return res.status(HTTP_STATUS_FORBIDDEN).json({
+        error: ERROR_CODES.FORBIDDEN,
+        message: ERROR_MESSAGES.ACCESS_DENIED,
+      } as QuizError);
+    }
+
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from(TABLE_QUESTIONS)
+      .select(
+        `
+          *,
+          answers (*)
+        `,
+      )
+      .eq(COLUMN_QUESTION_SET_ID, quizId)
+      .order(COLUMN_ORDER_INDEX);
+
+    if (questionsError) {
+      logger.error(
+        { error: questionsError, quizId, userId },
+        LOG_MESSAGES.ERROR_FETCHING_QUESTIONS,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.FETCH_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_QUESTIONS,
+      } as QuizError);
+    }
+
+    const response = {
+      ...quiz,
+      questions: questions || [],
+    };
+
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      LOG_MESSAGES.EXCEPTION_IN_GET_QUIZ_ID,
+    );
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: GET /:id/edit
+ * Description:
+ * - Get quiz data for editing
+ * - Includes questions and answers for edit view
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - JSON response with quiz data including questions
+ */
+router.get('/:id/edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND_NO_PERMISSION,
+      } as QuizError);
+    }
+
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from(TABLE_QUESTIONS)
+      .select(
+        `
+        *,
+        answers (*)
+      `,
+      )
+      .eq(COLUMN_QUESTION_SET_ID, quizId)
+      .order(COLUMN_ORDER_INDEX, { ascending: true });
+
+    if (questionsError) {
+      logger.error(
+        { error: questionsError, quizId, userId },
+        LOG_MESSAGES.ERROR_FETCHING_QUESTIONS_FOR_EDIT,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.FETCH_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_FETCH_QUESTIONS_FOR_EDIT,
+      } as QuizError);
+    }
+
+    const response = {
+      ...quiz,
+      questions: questions || [],
+    };
+
+    logger.info(
+      { quizId, userId, questionCount: questions?.length || DEFAULT_COUNT },
+      LOG_MESSAGES.QUIZ_DATA_FETCHED_FOR_EDIT,
+    );
+    res.json(response);
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      LOG_MESSAGES.EXCEPTION_IN_GET_QUIZ_EDIT,
+    );
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: PATCH /:id/draft
+ * Description:
+ * - Set quiz to draft status for editing
+ * - Verifies quiz ownership
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - JSON response with updated quiz status
+ */
+router.patch('/:id/draft', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND_NO_PERMISSION,
+      } as QuizError);
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from(TABLE_QUIZ_SETS)
+      .update({
+        status: STATUS_DRAFT,
+        updated_at: new Date().toISOString(),
+      })
+      .eq(COLUMN_ID, quizId)
+      .eq(COLUMN_USER_ID, userId);
+
+    if (updateError) {
+      logger.error(
+        { error: updateError, quizId, userId },
+        LOG_MESSAGES.ERROR_SETTING_QUIZ_TO_DRAFT,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.UPDATE_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_SET_DRAFT_STATUS,
+      } as QuizError);
+    }
+
+    logger.info({ quizId, userId }, LOG_MESSAGES.QUIZ_SET_TO_DRAFT);
+    res.json({
+      id: quizId,
+      status: STATUS_DRAFT,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      LOG_MESSAGES.EXCEPTION_IN_PATCH_DRAFT,
+    );
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+/**
+ * Route: PATCH /:id/publish
+ * Description:
+ * - Publish edited quiz
+ * - Validates that quiz has at least one question
+ *
+ * Parameters:
+ * - req.params.id: Quiz identifier
+ *
+ * Returns:
+ * - JSON response with published quiz status
+ */
+router.patch('/:id/publish', authMiddleware, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id: quizId } = req.params;
+    const userId = req.user!.id;
+
+    const quiz = await getQuizById(quizId, userId);
+    if (!quiz) {
+      return res.status(HTTP_STATUS_NOT_FOUND).json({
+        error: ERROR_CODES.NOT_FOUND,
+        message: ERROR_MESSAGES.QUIZ_NOT_FOUND_NO_PERMISSION_PUBLISH,
+      } as QuizError);
+    }
+
+    const { data: questions, error: questionsError } = await supabaseAdmin
+      .from(TABLE_QUESTIONS)
+      .select(COLUMN_ID)
+      .eq(COLUMN_QUESTION_SET_ID, quizId);
+
+    if (questionsError) {
+      logger.error(
+        { error: questionsError, quizId, userId },
+        LOG_MESSAGES.ERROR_CHECKING_QUESTIONS,
+      );
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.FETCH_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_CHECK_QUESTIONS,
+      } as QuizError);
+    }
+
+    if (!questions || questions.length < MIN_QUESTIONS_FOR_PUBLISH) {
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.VALIDATION_ERROR,
+        message: ERROR_MESSAGES.QUIZ_MUST_HAVE_QUESTIONS,
+      } as QuizError);
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from(TABLE_QUIZ_SETS)
+      .update({
+        status: STATUS_PUBLISHED,
+        updated_at: new Date().toISOString(),
+      })
+      .eq(COLUMN_ID, quizId)
+      .eq(COLUMN_USER_ID, userId);
+
+    if (updateError) {
+      logger.error({ error: updateError, quizId, userId }, LOG_MESSAGES.ERROR_UPDATING_QUIZ);
+      return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.UPDATE_FAILED,
+        message: ERROR_MESSAGES.FAILED_TO_PUBLISH_QUIZ,
+      } as QuizError);
+    }
+
+    logger.info(
+      { quizId, userId, questionCount: questions.length },
+      LOG_MESSAGES.QUIZ_PUBLISHED_SUCCESSFULLY,
+    );
+    res.json({
+      id: quizId,
+      status: STATUS_PUBLISHED,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error(
+      { error, userId: req.user?.id, quizId: req.params.id },
+      LOG_MESSAGES.EXCEPTION_IN_PATCH_PUBLISH,
+    );
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+    } as QuizError);
+  }
+});
+
+//----------------------------------------------------
+// 5. Helper Functions
+//----------------------------------------------------
+/**
+ * Function: cleanupQuizImages
+ * Description:
+ * - Clean up all images related to a quiz before hard deletion
+ * - Collects and deletes all associated images from storage
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - void: No return value
+ */
+async function cleanupQuizImages(quizId: string): Promise<void> {
+  try {
+    logger.info({ quizId }, LOG_MESSAGES.STARTING_IMAGE_CLEANUP);
+
+    const imagePaths = await collectAllQuizImagePaths(quizId);
+    await deleteImagesFromStorage(quizId, imagePaths);
+  } catch (error) {
+    logger.error({ error, quizId }, LOG_MESSAGES.EXCEPTION_DURING_CLEANUP);
+  }
+}
+
+/**
+ * Function: collectAllQuizImagePaths
+ * Description:
+ * - Collect all image paths associated with a quiz
+ * - Gathers thumbnail, question, and answer image paths
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - string[]: Array of image paths
+ */
+async function collectAllQuizImagePaths(quizId: string): Promise<string[]> {
+  const imagePaths: string[] = [];
+
+  const thumbnailPath = await getQuizThumbnailPath(quizId);
+  if (thumbnailPath) imagePaths.push(thumbnailPath);
+
+  const questionImagePaths = await getQuestionImagePaths(quizId);
+  imagePaths.push(...questionImagePaths);
+
+  const answerImagePaths = await getAnswerImagePaths(quizId);
+  imagePaths.push(...answerImagePaths);
+
+  return imagePaths;
+}
+
+/**
+ * Function: getQuizThumbnailPath
+ * Description:
+ * - Get quiz thumbnail path from database
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - string | null: Thumbnail storage path or null if not found
+ */
+async function getQuizThumbnailPath(quizId: string): Promise<string | null> {
+  const { data: quizData } = await supabaseAdmin
+    .from(TABLE_QUIZ_SETS)
+    .select(COLUMN_THUMBNAIL_URL)
+    .eq(COLUMN_ID, quizId)
+    .single();
+
+  if (!quizData?.thumbnail_url) return null;
+
+  return extractStoragePathFromUrl(quizData.thumbnail_url);
+}
+
+/**
+ * Function: getQuestionImagePaths
+ * Description:
+ * - Get all question image paths for a quiz
+ * - Collects both question images and explanation images
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - string[]: Array of question image paths
+ */
+async function getQuestionImagePaths(quizId: string): Promise<string[]> {
+  const { data: questionsData } = await supabaseAdmin
+    .from(TABLE_QUESTIONS)
+    .select(`id, ${COLUMN_IMAGE_URL}, ${COLUMN_EXPLANATION_IMAGE_URL}`)
+    .eq(COLUMN_QUESTION_SET_ID, quizId);
+
+  if (!questionsData) return [];
+
+  const imagePaths: string[] = [];
+  for (const question of questionsData) {
+    if (question.image_url) {
+      const imagePath = extractStoragePathFromUrl(question.image_url);
+      if (imagePath) imagePaths.push(imagePath);
+    }
+    if (question.explanation_image_url) {
+      const explanationPath = extractStoragePathFromUrl(question.explanation_image_url);
+      if (explanationPath) imagePaths.push(explanationPath);
+    }
+  }
+
+  return imagePaths;
+}
+
+/**
+ * Function: getAnswerImagePaths
+ * Description:
+ * - Get all answer image paths for a quiz
+ * - First gets question IDs, then collects answer images
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ *
+ * Returns:
+ * - string[]: Array of answer image paths
+ */
+async function getAnswerImagePaths(quizId: string): Promise<string[]> {
+  const { data: questionsData } = await supabaseAdmin
+    .from(TABLE_QUESTIONS)
+    .select(COLUMN_ID)
+    .eq(COLUMN_QUESTION_SET_ID, quizId);
+
+  if (!questionsData || questionsData.length === DEFAULT_COUNT) return [];
+
+  const questionIds = questionsData.map((q) => q.id);
+  const { data: answersData } = await supabaseAdmin
+    .from(TABLE_ANSWERS)
+    .select(COLUMN_IMAGE_URL)
+    .in(COLUMN_QUESTION_ID, questionIds);
+
+  if (!answersData) return [];
+
+  const imagePaths: string[] = [];
+  for (const answer of answersData) {
+    if (answer.image_url) {
+      const answerPath = extractStoragePathFromUrl(answer.image_url);
+      if (answerPath) imagePaths.push(answerPath);
+    }
+  }
+
+  return imagePaths;
+}
+
+/**
+ * Function: deleteImagesFromStorage
+ * Description:
+ * - Delete images from Supabase storage
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ * - imagePaths (string[]): Array of image paths to delete
+ *
+ * Returns:
+ * - void: No return value
+ */
+async function deleteImagesFromStorage(quizId: string, imagePaths: string[]): Promise<void> {
+  if (imagePaths.length === DEFAULT_COUNT) return;
+
+  const { error: deleteError } = await supabaseAdmin.storage
+    .from(STORAGE_BUCKET_QUIZ_IMAGES)
+    .remove(imagePaths);
+
+  if (deleteError) {
+    logger.error({ error: deleteError, quizId, imagePaths }, LOG_MESSAGES.ERROR_DELETING_IMAGES);
+  } else {
+    logger.info(
+      { quizId, deletedCount: imagePaths.length },
+      LOG_MESSAGES.SUCCESSFULLY_DELETED_IMAGES,
+    );
+  }
+}
+
+/**
+ * Function: extractStoragePathFromUrl
+ * Description:
+ * - Extract storage path from Supabase storage URL
+ * - Parses URL to get the file path within the storage bucket
+ *
+ * Parameters:
+ * - imageUrl (string): Full Supabase storage URL
+ *
+ * Returns:
+ * - string | null: Storage path or null if URL format is invalid
+ */
+function extractStoragePathFromUrl(imageUrl: string): string | null {
+  if (!imageUrl) return null;
+
+  const match = imageUrl.match(STORAGE_URL_REGEX);
+  return match ? match[1] : null;
+}
+
+/**
+ * Function: getQuizById
+ * Description:
+ * - Get quiz by ID from database
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ * - userId (string | undefined): Optional user identifier for logging
+ *
+ * Returns:
+ * - QuizSetResponse | null: Quiz data or null if not found
+ */
+async function getQuizById(quizId: string, userId?: string): Promise<QuizSetResponse | null> {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from(TABLE_QUIZ_SETS)
+      .select(SELECT_ALL)
+      .eq(COLUMN_ID, quizId)
+      .maybeSingle();
+
+    if (error) {
+      logger.error({ error, quizId, userId }, LOG_MESSAGES.ERROR_FETCHING_QUIZ_BY_ID);
+      return null;
+    }
+
+    return data as QuizSetResponse;
+  } catch (error) {
+    logger.error({ error, quizId, userId }, LOG_MESSAGES.EXCEPTION_IN_GET_QUIZ_BY_ID);
+    return null;
+  }
+}
+
+/**
+ * Function: getCompleteQuizForEdit
+ * Description:
+ * - Get complete quiz data with questions and answers for editing
+ * - Verifies quiz ownership before returning data
+ *
+ * Parameters:
+ * - quizId (string): Quiz identifier
+ * - userId (string): User identifier
+ *
+ * Returns:
+ * - (QuizSetResponse & { questions: QuestionWithAnswers[] }) | null: Complete quiz data or null
+ */
 async function getCompleteQuizForEdit(
   quizId: string,
   userId: string,
 ): Promise<(QuizSetResponse & { questions: QuestionWithAnswers[] }) | null> {
   try {
-    // First get the quiz data
     const quiz = await getQuizById(quizId, userId);
     if (!quiz || quiz.user_id !== userId) {
       return null;
     }
 
-    // Get questions for this quiz
     const { data: questions, error: questionsError } = await supabaseAdmin
-      .from('questions')
+      .from(TABLE_QUESTIONS)
       .select(
         `
         id,
@@ -244,15 +1221,17 @@ async function getCompleteQuizForEdit(
         )
       `,
       )
-      .eq('question_set_id', quizId)
-      .order('order_index');
+      .eq(COLUMN_QUESTION_SET_ID, quizId)
+      .order(COLUMN_ORDER_INDEX);
 
     if (questionsError) {
-      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions for edit');
+      logger.error(
+        { error: questionsError, quizId, userId },
+        LOG_MESSAGES.ERROR_FETCHING_QUESTIONS_FOR_EDIT,
+      );
       return null;
     }
 
-    // Transform the data to match the expected format
     const transformedQuestions = questions.map((q) => ({
       id: q.id,
       question_text: q.question_text,
@@ -289,672 +1268,12 @@ async function getCompleteQuizForEdit(
       questions: transformedQuestions,
     };
   } catch (error) {
-    logger.error({ error, quizId, userId }, 'Exception in getCompleteQuizForEdit');
+    logger.error({ error, quizId, userId }, LOG_MESSAGES.EXCEPTION_IN_GET_COMPLETE_QUIZ);
     return null;
   }
 }
 
-// ============================================================================
-// QUIZ CRUD ROUTES
-// ============================================================================
-
-// POST /quiz - Create quiz
-router.post(
-  '/',
-  authMiddleware,
-  validateRequest(CreateQuizSetSchema),
-  async (req: AuthenticatedRequest, res) => {
-    try {
-      const userId = req.user!.id;
-      const quizData = req.body as CreateQuizSetInput;
-
-      // Generate unique quiz code
-      const quizCode = await generateQuizCode();
-
-      // Prepare quiz data for insertion
-      const insertData = {
-        user_id: userId,
-        title: quizData.title,
-        description: quizData.description,
-        thumbnail_url: quizData.thumbnail_url || null,
-        is_public: quizData.is_public,
-        difficulty_level: quizData.difficulty_level,
-        category: quizData.category,
-        total_questions: 0, // Will be updated when questions are added
-        times_played: 0,
-        status: 'draft' as const,
-        tags: quizData.tags,
-        play_settings: {
-          code: quizCode,
-          show_question_only: quizData.play_settings?.show_question_only ?? true,
-          show_explanation: quizData.play_settings?.show_explanation ?? true,
-          time_bonus: quizData.play_settings?.time_bonus ?? false,
-          streak_bonus: quizData.play_settings?.streak_bonus ?? false,
-          show_correct_answer: quizData.play_settings?.show_correct_answer ?? true,
-          max_players: quizData.play_settings?.max_players ?? 100,
-        },
-      };
-
-      const { data, error } = await supabaseAdmin
-        .from('quiz_sets')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) {
-        logger.error({ error, userId, quizData }, 'Error creating quiz');
-        return res.status(500).json({
-          error: 'creation_failed',
-          message: 'Failed to create quiz',
-        } as QuizError);
-      }
-
-      logger.info({ quizId: data.id, userId }, 'Quiz created successfully');
-
-      res.status(201).json({
-        id: data.id,
-        user_id: data.user_id,
-        title: data.title,
-        description: data.description,
-        thumbnail_url: data.thumbnail_url,
-        is_public: data.is_public,
-        difficulty_level: data.difficulty_level,
-        category: data.category,
-        total_questions: data.total_questions,
-        times_played: data.times_played,
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-        status: data.status,
-        tags: data.tags,
-        last_played_at: data.last_played_at,
-        play_settings: data.play_settings,
-        cloned_from: data.cloned_from,
-      } as QuizSetResponse);
-    } catch (error) {
-      logger.error({ error }, 'Exception in POST /quiz');
-      res.status(500).json({
-        error: 'internal_error',
-        message: 'Internal server error',
-      } as QuizError);
-    }
-  },
-);
-
-// GET /quiz/:id - Get quiz
-router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.id;
-    const { include } = req.query;
-
-    const quiz = await getQuizById(id, userId);
-
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found',
-      } as QuizError);
-    }
-
-    // If include=questions,answers, return complete quiz data
-    if (include === 'questions,answers') {
-      const completeQuiz = await getCompleteQuizForEdit(id, userId);
-      if (!completeQuiz) {
-        return res.status(404).json({
-          error: 'not_found',
-          message: 'Quiz not found',
-        } as QuizError);
-      }
-      return res.json(completeQuiz);
-    }
-
-    res.json(quiz);
-  } catch (error) {
-    logger.error({ error, quizId: req.params.id }, 'Exception in GET /quiz/:id');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// PUT /quiz/:id/start-edit - Set quiz to draft status when editing starts
-router.put('/:id/start-edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.id;
-
-    // Verify quiz exists and user owns it
-    const existingQuiz = await getQuizById(id, userId);
-    if (!existingQuiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found',
-      } as QuizError);
-    }
-
-    if (existingQuiz.user_id !== userId) {
-      return res.status(403).json({
-        error: 'forbidden',
-        message: 'You can only edit your own quizzes',
-      } as QuizError);
-    }
-
-    // Set quiz status to draft
-    const { data, error } = await supabaseAdmin
-      .from('quiz_sets')
-      .update({
-        status: 'draft',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (error) {
-      logger.error({ error, quizId: id, userId }, 'Error setting quiz to draft');
-      return res.status(500).json({
-        error: 'update_failed',
-        message: 'Failed to set quiz to draft',
-      } as QuizError);
-    }
-
-    logger.info({ quizId: id, userId }, 'Quiz set to draft for editing');
-
-    res.json({
-      id: data.id,
-      status: data.status,
-      updated_at: data.updated_at,
-    });
-  } catch (error) {
-    logger.error({ error, quizId: req.params.id }, 'Exception in PUT /quiz/:id/start-edit');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// PUT /quiz/:id - Update quiz
-router.put(
-  '/:id',
-  authMiddleware,
-  validateRequest(UpdateQuizSetSchema),
-  async (req: AuthenticatedRequest, res) => {
-    try {
-      const { id } = req.params;
-      const userId = req.user!.id;
-      const updateData = req.body as UpdateQuizSetInput;
-
-      // Verify quiz exists and user owns it
-      const existingQuiz = await getQuizById(id, userId);
-      if (!existingQuiz) {
-        return res.status(404).json({
-          error: 'not_found',
-          message: 'Quiz not found',
-        } as QuizError);
-      }
-
-      if (existingQuiz.user_id !== userId) {
-        return res.status(403).json({
-          error: 'forbidden',
-          message: 'You can only update your own quizzes',
-        } as QuizError);
-      }
-
-      // Prepare update data
-      const updatePayload: Record<string, unknown> = {
-        updated_at: new Date().toISOString(),
-      };
-
-      // Only update provided fields
-      if (updateData.title !== undefined) updatePayload.title = updateData.title;
-      if (updateData.description !== undefined) updatePayload.description = updateData.description;
-      if (updateData.thumbnail_url !== undefined)
-        updatePayload.thumbnail_url = updateData.thumbnail_url;
-      if (updateData.is_public !== undefined) updatePayload.is_public = updateData.is_public;
-      if (updateData.difficulty_level !== undefined)
-        updatePayload.difficulty_level = updateData.difficulty_level;
-      if (updateData.category !== undefined) updatePayload.category = updateData.category;
-      if (updateData.tags !== undefined) updatePayload.tags = updateData.tags;
-      if (updateData.status !== undefined) updatePayload.status = updateData.status;
-      if (updateData.play_settings !== undefined) {
-        updatePayload.play_settings = {
-          ...existingQuiz.play_settings,
-          ...updateData.play_settings,
-        };
-      }
-
-      const { data, error } = await supabaseAdmin
-        .from('quiz_sets')
-        .update(updatePayload)
-        .eq('id', id)
-        .eq('user_id', userId)
-        .select()
-        .single();
-
-      if (error) {
-        logger.error({ error, quizId: id, userId, updateData }, 'Error updating quiz');
-        return res.status(500).json({
-          error: 'update_failed',
-          message: 'Failed to update quiz',
-        } as QuizError);
-      }
-
-      logger.info({ quizId: id, userId }, 'Quiz updated successfully');
-
-      res.json({
-        id: data.id,
-        user_id: data.user_id,
-        title: data.title,
-        description: data.description,
-        thumbnail_url: data.thumbnail_url,
-        is_public: data.is_public,
-        difficulty_level: data.difficulty_level,
-        category: data.category,
-        total_questions: data.total_questions,
-        times_played: data.times_played,
-        created_at: data.created_at,
-        updated_at: data.updated_at,
-        status: data.status,
-        tags: data.tags,
-        last_played_at: data.last_played_at,
-        play_settings: data.play_settings,
-        cloned_from: data.cloned_from,
-      } as QuizSetResponse);
-    } catch (error) {
-      logger.error({ error, quizId: req.params.id }, 'Exception in PUT /quiz/:id');
-      res.status(500).json({
-        error: 'internal_error',
-        message: 'Internal server error',
-      } as QuizError);
-    }
-  },
-);
-
-// DELETE /quiz/:id - Delete quiz
-router.delete('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.id;
-
-    // Verify quiz exists and user owns it
-    const existingQuiz = await getQuizById(id, userId);
-    if (!existingQuiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found',
-      } as QuizError);
-    }
-
-    if (existingQuiz.user_id !== userId) {
-      return res.status(403).json({
-        error: 'forbidden',
-        message: 'You can only delete your own quizzes',
-      } as QuizError);
-    }
-
-    // Clean up all images before deleting the quiz
-    try {
-      await cleanupQuizImages(id);
-    } catch (error) {
-      logger.error(
-        { error, quizId: id },
-        'Failed to cleanup images, proceeding with quiz deletion',
-      );
-      // Continue with deletion even if image cleanup fails
-    }
-
-    // Delete quiz (hard delete)
-    const { error } = await supabaseAdmin
-      .from('quiz_sets')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
-
-    if (error) {
-      logger.error({ error, quizId: id, userId }, 'Error deleting quiz');
-      return res.status(500).json({
-        error: 'delete_failed',
-        message: 'Failed to delete quiz',
-      } as QuizError);
-    }
-
-    logger.info({ quizId: id, userId }, 'Quiz and associated images deleted successfully');
-
-    res.status(204).send();
-  } catch (error) {
-    logger.error({ error, quizId: req.params.id }, 'Exception in DELETE /quiz/:id');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// GET /quiz - List quizzes
-router.get(
-  '/',
-  authMiddleware,
-  validateQueryParams(QuizQuerySchema),
-  async (req: AuthenticatedRequest, res) => {
-    try {
-      const userId = req.user!.id;
-      const {
-        page = 1,
-        limit = 10,
-        category,
-        difficulty,
-        status,
-        search,
-        is_public,
-        sort_by = 'created_at',
-        sort_order = 'desc',
-      } = req.validatedQuery as QuizQueryParams;
-
-      // Build query step by step
-      let query = supabaseAdmin.from('quiz_sets').select('*', { count: 'exact' });
-
-      // Apply base filter
-      if (is_public === 'true') {
-        query = query.eq('is_public', true);
-      } else {
-        query = query.eq('user_id', userId);
-      }
-
-      // Apply additional filters
-      if (category) query = query.eq('category', category);
-      if (difficulty) query = query.eq('difficulty_level', difficulty);
-      if (status) query = query.eq('status', status);
-      if (search) {
-        query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`);
-      }
-
-      // Apply sorting and pagination
-      query = query.order(sort_by, { ascending: sort_order === 'asc' });
-      const offset = (Number(page) - 1) * Number(limit);
-      const { data, error, count } = await query.range(offset, offset + Number(limit) - 1);
-
-      if (error) {
-        logger.error({ error, userId, query: req.validatedQuery }, 'Error fetching quizzes');
-        return res.status(500).json({
-          error: 'fetch_failed',
-          message: 'Failed to fetch quizzes',
-        } as QuizError);
-      }
-
-      const totalPages = Math.ceil((count || 0) / Number(limit));
-
-      const response: PaginatedResponse<QuizSetResponse> = {
-        data: (data || []) as QuizSetResponse[],
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: count || 0,
-          total_pages: totalPages,
-          has_next: Number(page) < totalPages,
-          has_prev: Number(page) > 1,
-        },
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error({ error, userId: req.user?.id }, 'Exception in GET /quiz');
-      res.status(500).json({
-        error: 'internal_error',
-        message: 'Internal server error',
-      } as QuizError);
-    }
-  },
-);
-
-// GET /quiz/:id - Get single quiz by ID
-router.get('/:id', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const quizId = req.params.id;
-
-    // Get the quiz data
-    const quiz = await getQuizById(quizId, userId);
-
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found',
-      } as QuizError);
-    }
-
-    // Check if user owns the quiz or if it's public
-    if (quiz.user_id !== userId && !quiz.is_public) {
-      return res.status(403).json({
-        error: 'forbidden',
-        message: 'Access denied',
-      } as QuizError);
-    }
-
-    // Get questions for this quiz
-    const { data: questions, error: questionsError } = await supabaseAdmin
-      .from('questions')
-      .select(
-        `
-          *,
-          answers (*)
-        `,
-      )
-      .eq('question_set_id', quizId)
-      .order('order_index');
-
-    if (questionsError) {
-      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions');
-      return res.status(500).json({
-        error: 'fetch_failed',
-        message: 'Failed to fetch questions',
-      } as QuizError);
-    }
-
-    // Format the response to match QuizSetComplete structure
-    const response = {
-      ...quiz,
-      questions: questions || [],
-    };
-
-    res.json(response);
-  } catch (error) {
-    logger.error(
-      { error, userId: req.user?.id, quizId: req.params.id },
-      'Exception in GET /quiz/:id',
-    );
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// ============================================================================
-// QUIZ EDITING ENDPOINTS
-// ============================================================================
-
-// GET /quiz/:id/edit - Get quiz data for editing
-router.get('/:id/edit', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id: quizId } = req.params;
-    const userId = req.user!.id;
-
-    // Verify quiz exists and user owns it
-    const quiz = await getQuizById(quizId, userId);
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found or you do not have permission to edit it',
-      } as QuizError);
-    }
-
-    // Get questions with answers for editing
-    const { data: questions, error: questionsError } = await supabaseAdmin
-      .from('questions')
-      .select(
-        `
-        *,
-        answers (*)
-      `,
-      )
-      .eq('question_set_id', quizId)
-      .order('order_index', { ascending: true });
-
-    if (questionsError) {
-      logger.error({ error: questionsError, quizId, userId }, 'Error fetching questions for edit');
-      return res.status(500).json({
-        error: 'fetch_failed',
-        message: 'Failed to fetch questions for editing',
-      } as QuizError);
-    }
-
-    // Format the response to match QuizSetComplete structure
-    const response = {
-      ...quiz,
-      questions: questions || [],
-    };
-
-    logger.info(
-      { quizId, userId, questionCount: questions?.length || 0 },
-      'Quiz data fetched for editing',
-    );
-    res.json(response);
-  } catch (error) {
-    logger.error(
-      { error, userId: req.user?.id, quizId: req.params.id },
-      'Exception in GET /quiz/:id/edit',
-    );
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// PATCH /quiz/:id/draft - Set quiz to draft status for editing
-router.patch('/:id/draft', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id: quizId } = req.params;
-    const userId = req.user!.id;
-
-    // Verify quiz exists and user owns it
-    const quiz = await getQuizById(quizId, userId);
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found or you do not have permission to edit it',
-      } as QuizError);
-    }
-
-    // Update quiz status to draft
-    const { error: updateError } = await supabaseAdmin
-      .from('quiz_sets')
-      .update({
-        status: 'draft',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', quizId)
-      .eq('user_id', userId);
-
-    if (updateError) {
-      logger.error({ error: updateError, quizId, userId }, 'Error setting quiz to draft');
-      return res.status(500).json({
-        error: 'update_failed',
-        message: 'Failed to set quiz to draft status',
-      } as QuizError);
-    }
-
-    logger.info({ quizId, userId }, 'Quiz set to draft for editing');
-    res.json({
-      id: quizId,
-      status: 'draft',
-      updated_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId: req.user?.id, quizId: req.params.id },
-      'Exception in PATCH /quiz/:id/draft',
-    );
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
-// PATCH /quiz/:id/publish - Publish edited quiz
-router.patch('/:id/publish', authMiddleware, async (req: AuthenticatedRequest, res) => {
-  try {
-    const { id: quizId } = req.params;
-    const userId = req.user!.id;
-
-    // Verify quiz exists and user owns it
-    const quiz = await getQuizById(quizId, userId);
-    if (!quiz) {
-      return res.status(404).json({
-        error: 'not_found',
-        message: 'Quiz not found or you do not have permission to publish it',
-      } as QuizError);
-    }
-
-    // Check if quiz has questions
-    const { data: questions, error: questionsError } = await supabaseAdmin
-      .from('questions')
-      .select('id')
-      .eq('question_set_id', quizId);
-
-    if (questionsError) {
-      logger.error({ error: questionsError, quizId, userId }, 'Error checking questions');
-      return res.status(500).json({
-        error: 'fetch_failed',
-        message: 'Failed to check quiz questions',
-      } as QuizError);
-    }
-
-    if (!questions || questions.length === 0) {
-      return res.status(400).json({
-        error: 'validation_error',
-        message: 'Quiz must have at least one question to be published',
-      } as QuizError);
-    }
-
-    // Update quiz status to published
-    const { error: updateError } = await supabaseAdmin
-      .from('quiz_sets')
-      .update({
-        status: 'published',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', quizId)
-      .eq('user_id', userId);
-
-    if (updateError) {
-      logger.error({ error: updateError, quizId, userId }, 'Error publishing quiz');
-      return res.status(500).json({
-        error: 'update_failed',
-        message: 'Failed to publish quiz',
-      } as QuizError);
-    }
-
-    logger.info({ quizId, userId, questionCount: questions.length }, 'Quiz published successfully');
-    res.json({
-      id: quizId,
-      status: 'published',
-      updated_at: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error(
-      { error, userId: req.user?.id, quizId: req.params.id },
-      'Exception in PATCH /quiz/:id/publish',
-    );
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
-    } as QuizError);
-  }
-});
-
+//----------------------------------------------------
+// 6. Export
+//----------------------------------------------------
 export default router;

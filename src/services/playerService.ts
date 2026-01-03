@@ -1,5 +1,27 @@
-// src/services/playerService.ts
+// ====================================================
+// File Name   : playerService.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2025-12-12
+
+// Description:
+// - Service class for managing player operations
+// - Handles player CRUD, game joining, and statistics
+// - Manages player lifecycle and game participation
+
+// Notes:
+// - Validates game status and lock state before allowing joins
+// - Automatically creates game_player_data when player is created
+// - Deduplicates players by device_id to prevent duplicate display
+// - Hosts are not counted in player count increments/decrements
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { SupabaseClient } from '@supabase/supabase-js';
+
 import { supabaseAdmin } from '../lib/supabase';
 import {
   CreatePlayerInput,
@@ -12,8 +34,99 @@ import {
 import { logger } from '../utils/logger';
 import { gamePlayerDataService } from './gamePlayerDataService';
 
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const INITIAL_SCORE = 0;
+const INITIAL_TOTAL_ANSWERS = 0;
+const INITIAL_CORRECT_ANSWERS = 0;
+const INITIAL_INCORRECT_ANSWERS = 0;
+const ACCURACY_PERCENTAGE_MULTIPLIER = 100;
+const DEFAULT_ACCURACY = 0;
+
+const TABLE_GAMES = 'games';
+const TABLE_PLAYERS = 'players';
+
+const COLUMN_ID = 'id';
+const COLUMN_GAME_ID = 'game_id';
+const COLUMN_DEVICE_ID = 'device_id';
+const COLUMN_IS_LOGGED_IN = 'is_logged_in';
+const COLUMN_IS_HOST = 'is_host';
+const COLUMN_CREATED_AT = 'created_at';
+const SELECT_ALL = '*';
+
+const GAME_STATUS_WAITING = 'waiting';
+const GAME_STATUS_ACTIVE = 'active';
+
+const RPC_INCREMENT_GAME_PLAYERS = 'increment_game_players';
+const RPC_DECREMENT_GAME_PLAYERS = 'decrement_game_players';
+const RPC_PARAM_GAME_ID = 'p_game_id';
+
+const GAME_SELECT_FIELDS = 'id, status, locked';
+const GAME_PLAYER_DATA_SELECT_QUERY = `
+  *,
+  game_player_data (
+    score,
+    answer_report
+  )
+`;
+
+const ERROR_MESSAGES = {
+  GAME_ID_REQUIRED: 'game_id is required',
+  DEVICE_ID_REQUIRED: 'device_id is required',
+  PLAYER_NAME_REQUIRED: 'player_name is required',
+  VERIFY_GAME_EXISTENCE_FAILED: 'Failed to verify game existence',
+  GAME_NOT_FOUND: 'Game not found',
+  GAME_LOCKED: 'Game is locked and not accepting new players',
+  GAME_NOT_ACCEPTING_PLAYERS: 'Game is not accepting players',
+  PLAYER_ALREADY_JOINED: 'Player already joined this game',
+  CREATE_PLAYER_FAILED: 'Failed to create player',
+  INTERNAL_SERVER_ERROR: 'Internal server error',
+  FETCH_PLAYERS_FAILED: 'Error fetching players',
+  FETCH_PLAYER_FAILED: 'Error fetching player',
+  FETCH_PLAYER_BY_DEVICE_FAILED: 'Error fetching player by device',
+  NO_UPDATES_PROVIDED: 'No updates provided',
+  PLAYER_NAME_CANNOT_BE_EMPTY: 'player_name cannot be empty',
+  UPDATE_PLAYER_FAILED: 'Failed to update player',
+  DELETE_PLAYER_FAILED: 'Error deleting player',
+  FETCH_PLAYERS_WITH_STATS_FAILED: 'Error fetching players with stats',
+} as const;
+
+const LOG_MESSAGES = {
+  CREATE_PLAYER_MISSING_GAME_ID: 'createPlayer called with missing game_id',
+  CREATE_PLAYER_MISSING_DEVICE_ID: 'createPlayer called with missing device_id',
+  CREATE_PLAYER_MISSING_PLAYER_NAME: 'createPlayer called with missing player_name',
+  ERROR_CHECKING_GAME_EXISTENCE: 'Error checking game existence',
+  ATTEMPTED_JOIN_NON_EXISTENT_GAME: 'Attempted to join non-existent game',
+  ATTEMPTED_JOIN_LOCKED_GAME: 'Attempted to join locked game',
+  ATTEMPTED_JOIN_INVALID_STATUS: 'Attempted to join game with invalid status',
+  PLAYER_ALREADY_EXISTS: 'Player already exists in this game',
+  ERROR_CREATING_PLAYER: 'Error creating player',
+  FAILED_INCREMENT_PLAYER_COUNT: 'Failed to increment player count',
+  FAILED_CREATE_GAME_PLAYER_DATA:
+    'Failed to create game_player_data during player creation (will be created on first answer)',
+  GAME_PLAYER_DATA_CREATED: 'Game player data created automatically during player creation',
+  PLAYER_CREATED_SUCCESSFULLY: 'Player created successfully',
+  EXCEPTION_IN_CREATE_PLAYER: 'Exception in createPlayer',
+  EXCEPTION_IN_GET_PLAYERS: 'Exception in getPlayers',
+  EXCEPTION_IN_GET_PLAYER_BY_ID: 'Exception in getPlayerById',
+  EXCEPTION_IN_GET_PLAYER_BY_DEVICE: 'Exception in getPlayerByDeviceId',
+  EXCEPTION_IN_UPDATE_PLAYER: 'Exception in updatePlayer',
+  ATTEMPTED_DELETE_NON_EXISTENT_PLAYER: 'Attempted to delete non-existent player',
+  FAILED_DECREMENT_PLAYER_COUNT: 'Failed to decrement player count',
+  PLAYER_DELETED_SUCCESSFULLY: 'Player deleted successfully',
+  EXCEPTION_IN_DELETE_PLAYER: 'Exception in deletePlayer',
+  EXCEPTION_IN_GET_PLAYERS_WITH_STATS: 'Exception in getPlayersWithStats',
+} as const;
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
 /**
- * Result of player creation operation
+ * Interface: PlayerCreateResult
+ * Description:
+ * - Result structure for player creation operations
+ * - Contains success status, created player (if successful), or error message
  */
 export interface PlayerCreateResult {
   success: boolean;
@@ -22,7 +135,10 @@ export interface PlayerCreateResult {
 }
 
 /**
- * Result of player update operation
+ * Interface: PlayerUpdateResult
+ * Description:
+ * - Result structure for player update operations
+ * - Contains success status, updated player (if successful), or error message
  */
 export interface PlayerUpdateResult {
   success: boolean;
@@ -30,9 +146,36 @@ export interface PlayerUpdateResult {
   error?: string;
 }
 
+interface PlayerStatsData {
+  id: string;
+  name: string;
+  device_id: string;
+  user_id: string | null;
+  is_host: boolean;
+  status: string;
+  game_id: string;
+  joined_at: string;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+  game_player_data?: Array<{
+    score: number;
+    answer_report: {
+      total_answers?: number;
+      correct_answers?: number;
+    };
+  }>;
+}
+
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
 /**
- * Service class for managing player operations
- * Handles player CRUD, game joining, and statistics
+ * Class: PlayerService
+ * Description:
+ * - Service class for managing player operations
+ * - Handles player CRUD, game joining, and statistics
+ * - Manages player lifecycle and game participation
  */
 export class PlayerService {
   private client: SupabaseClient;
@@ -42,170 +185,51 @@ export class PlayerService {
   }
 
   /**
-   * Create a new player (join game)
+   * Method: createPlayer
+   * Description:
+   * - Creates a new player (join game)
+   * - Validates game status and lock state
+   * - Automatically creates game_player_data for the player
    *
-   * @param input - The player creation data
-   * @returns Result object with success status and created player or error
+   * Parameters:
+   * - input (CreatePlayerInput): Player creation data
+   *
+   * Returns:
+   * - Promise<PlayerCreateResult>: Result object with success status and created player or error
    */
   async createPlayer(input: CreatePlayerInput): Promise<PlayerCreateResult> {
     try {
-      // Validate required fields
-      if (!input.game_id) {
-        logger.error('createPlayer called with missing game_id');
+      const validationError = this.validateCreatePlayerInput(input);
+      if (validationError) {
+        return validationError;
+      }
+
+      const gameValidation = await this.validateGameForPlayerJoin(input.game_id);
+      if (!gameValidation.valid) {
         return {
           success: false,
-          error: 'game_id is required',
+          error: gameValidation.error,
         };
       }
 
-      if (!input.device_id) {
-        logger.error({ gameId: input.game_id }, 'createPlayer called with missing device_id');
+      const playerExists = await this.checkExistingPlayer(input.game_id, input.device_id);
+      if (playerExists) {
         return {
           success: false,
-          error: 'device_id is required',
+          error: ERROR_MESSAGES.PLAYER_ALREADY_JOINED,
         };
       }
 
-      if (!input.player_name || input.player_name.trim() === '') {
-        logger.error({ gameId: input.game_id }, 'createPlayer called with missing player_name');
+      const player = await this.insertPlayer(input);
+      if (!player) {
         return {
           success: false,
-          error: 'player_name is required',
+          error: ERROR_MESSAGES.CREATE_PLAYER_FAILED,
         };
       }
 
-      // Verify that the game exists and is accepting players
-      const { data: game, error: gameCheckError } = await this.client
-        .from('games')
-        .select('id, status, locked')
-        .eq('id', input.game_id)
-        .maybeSingle();
-
-      if (gameCheckError) {
-        logger.error(
-          { error: gameCheckError, gameId: input.game_id },
-          'Error checking game existence',
-        );
-        return {
-          success: false,
-          error: 'Failed to verify game existence',
-        };
-      }
-
-      if (!game) {
-        logger.warn({ gameId: input.game_id }, 'Attempted to join non-existent game');
-        return {
-          success: false,
-          error: 'Game not found',
-        };
-      }
-
-      if (game.locked) {
-        logger.warn({ gameId: input.game_id }, 'Attempted to join locked game');
-        return {
-          success: false,
-          error: 'Game is locked and not accepting new players',
-        };
-      }
-
-      if (game.status !== 'waiting' && game.status !== 'active') {
-        logger.warn(
-          { gameId: input.game_id, status: game.status },
-          'Attempted to join game with invalid status',
-        );
-        return {
-          success: false,
-          error: 'Game is not accepting players',
-        };
-      }
-
-      // Check if player already exists with this device_id
-      const { data: existingPlayer } = await this.client
-        .from('players')
-        .select('id')
-        .eq('game_id', input.game_id)
-        .eq('device_id', input.device_id)
-        .maybeSingle();
-
-      if (existingPlayer) {
-        logger.warn(
-          { gameId: input.game_id, deviceId: input.device_id },
-          'Player already exists in this game',
-        );
-        return {
-          success: false,
-          error: 'Player already joined this game',
-        };
-      }
-
-      // Create the player
-      const { data: player, error: createError } = await this.client
-        .from('players')
-        .insert({
-          game_id: input.game_id,
-          device_id: input.device_id,
-          player_name: input.player_name.trim(),
-          is_logged_in: input.is_logged_in || false,
-          is_host: input.is_host || false,
-        })
-        .select()
-        .single();
-
-      if (createError) {
-        logger.error({ error: createError, gameId: input.game_id }, 'Error creating player');
-        return {
-          success: false,
-          error: 'Failed to create player',
-        };
-      }
-
-      // Increment current_players count only for non-host players
-      // Hosts are not counted in the player count
-      if (!input.is_host) {
-        const { error: updateError } = await this.client.rpc('increment_game_players', {
-          p_game_id: input.game_id,
-        });
-
-        if (updateError) {
-          logger.warn(
-            { error: updateError, gameId: input.game_id },
-            'Failed to increment player count',
-          );
-          // Don't fail the request, player was created successfully
-        }
-      }
-
-      // Automatically create game_player_data for the player
-      const gamePlayerDataResult = await gamePlayerDataService.createGamePlayerData({
-        player_id: player.id,
-        game_id: input.game_id,
-        player_device_id: input.device_id,
-        score: 0,
-        answer_report: {
-          total_answers: 0,
-          correct_answers: 0,
-          incorrect_answers: 0,
-          questions: [],
-        },
-      });
-
-      if (!gamePlayerDataResult.success) {
-        // Log warning but don't fail - player was created successfully
-        // The game_player_data will be created automatically when submitting first answer
-        logger.warn(
-          {
-            error: gamePlayerDataResult.error,
-            playerId: player.id,
-            gameId: input.game_id,
-          },
-          'Failed to create game_player_data during player creation (will be created on first answer)',
-        );
-      } else {
-        logger.info(
-          { playerId: player.id, gameId: input.game_id },
-          'Game player data created automatically during player creation',
-        );
-      }
+      await this.incrementPlayerCountIfNeeded(input.game_id, input.is_host);
+      await this.createGamePlayerDataForPlayer(player.id, input.game_id, input.device_id);
 
       logger.info(
         {
@@ -213,7 +237,7 @@ export class PlayerService {
           gameId: input.game_id,
           playerName: player.player_name,
         },
-        'Player created successfully',
+        LOG_MESSAGES.PLAYER_CREATED_SUCCESSFULLY,
       );
 
       return {
@@ -221,351 +245,684 @@ export class PlayerService {
         player,
       };
     } catch (err) {
-      logger.error({ err, gameId: input.game_id }, 'Exception in createPlayer');
+      logger.error({ err, gameId: input.game_id }, LOG_MESSAGES.EXCEPTION_IN_CREATE_PLAYER);
       return {
         success: false,
-        error: 'Internal server error',
+        error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       };
     }
   }
 
   /**
-   * Get all players in a game with filtering and pagination
+   * Method: getPlayers
+   * Description:
+   * - Retrieves all players in a game with filtering and pagination
+   * - Deduplicates players by device_id to prevent duplicate display
    *
-   * @param gameId - The game ID to fetch players for
-   * @param query - Query parameters for filtering and pagination
-   * @returns List of players with metadata
+   * Parameters:
+   * - gameId (string): Game ID to fetch players for
+   * - query (PlayerQuery): Query parameters for filtering and pagination
+   *
+   * Returns:
+   * - Promise<PlayersResponse | null>: List of players with metadata, or null on error
    */
   async getPlayers(gameId: string, query: PlayerQuery): Promise<PlayersResponse | null> {
     try {
-      let queryBuilder = this.client
-        .from('players')
-        .select('*', { count: 'exact' })
-        .eq('game_id', gameId);
-
-      // Apply filters
-      if (query.is_host !== undefined) {
-        queryBuilder = queryBuilder.eq('is_host', query.is_host);
-      }
-
-      if (query.is_logged_in !== undefined) {
-        queryBuilder = queryBuilder.eq('is_logged_in', query.is_logged_in);
-      }
-
-      // Order by created_at (join order)
-      queryBuilder = queryBuilder.order('created_at', { ascending: true });
-
-      // Apply pagination
-      queryBuilder = queryBuilder.range(query.offset, query.offset + query.limit - 1);
-
+      const queryBuilder = this.buildPlayersQuery(gameId, query);
       const { data: players, error } = await queryBuilder;
 
       if (error) {
-        logger.error({ error, gameId }, 'Error fetching players');
+        logger.error({ error, gameId }, ERROR_MESSAGES.FETCH_PLAYERS_FAILED);
         return null;
       }
 
-      // Deduplicate players by device_id - if multiple players have the same device_id,
-      // keep only the first one (earliest created_at) to prevent duplicate display
-      const playersArray = players || [];
-      const deviceIdMap = new Map<string, (typeof playersArray)[0]>();
-
-      playersArray.forEach((player) => {
-        if (player.device_id) {
-          const existing = deviceIdMap.get(player.device_id);
-          // Keep the first player (earliest created_at) for each device_id
-          if (!existing || new Date(player.created_at) < new Date(existing.created_at)) {
-            deviceIdMap.set(player.device_id, player);
-          }
-        } else {
-          // If no device_id, include the player (shouldn't happen, but handle it)
-          // Use player.id as key to ensure uniqueness
-          deviceIdMap.set(player.id, player);
-        }
-      });
-
-      // Convert map values to array
-      const deduplicatedPlayers = Array.from(deviceIdMap.values());
-
-      // Recalculate count after deduplication
-      const deduplicatedCount = deduplicatedPlayers.length;
+      const deduplicatedPlayers = this.deduplicatePlayersByDeviceId(players || []);
 
       return {
         players: deduplicatedPlayers,
-        total: deduplicatedCount,
+        total: deduplicatedPlayers.length,
         game_id: gameId,
         limit: query.limit,
         offset: query.offset,
       };
     } catch (err) {
-      logger.error({ err, gameId }, 'Exception in getPlayers');
+      logger.error({ err, gameId }, LOG_MESSAGES.EXCEPTION_IN_GET_PLAYERS);
       return null;
     }
   }
 
   /**
-   * Get a single player by ID
+   * Method: getPlayerById
+   * Description:
+   * - Retrieves a single player by ID
    *
-   * @param playerId - The player ID to fetch
-   * @returns Player data or null
+   * Parameters:
+   * - playerId (string): Player ID to fetch
+   *
+   * Returns:
+   * - Promise<Player | null>: Player data or null if not found or on error
    */
   async getPlayerById(playerId: string): Promise<Player | null> {
     try {
       const { data: player, error } = await this.client
-        .from('players')
-        .select('*')
-        .eq('id', playerId)
+        .from(TABLE_PLAYERS)
+        .select(SELECT_ALL)
+        .eq(COLUMN_ID, playerId)
         .single();
 
       if (error) {
-        logger.error({ error, playerId }, 'Error fetching player');
+        logger.error({ error, playerId }, ERROR_MESSAGES.FETCH_PLAYER_FAILED);
         return null;
       }
 
       return player;
     } catch (err) {
-      logger.error({ err, playerId }, 'Exception in getPlayerById');
+      logger.error({ err, playerId }, LOG_MESSAGES.EXCEPTION_IN_GET_PLAYER_BY_ID);
       return null;
     }
   }
 
   /**
-   * Get player by device ID in a specific game
+   * Method: getPlayerByDeviceId
+   * Description:
+   * - Retrieves player by device ID in a specific game
    *
-   * @param gameId - The game ID
-   * @param deviceId - The device ID
-   * @returns Player data or null
+   * Parameters:
+   * - gameId (string): Game ID
+   * - deviceId (string): Device ID
+   *
+   * Returns:
+   * - Promise<Player | null>: Player data or null if not found or on error
    */
   async getPlayerByDeviceId(gameId: string, deviceId: string): Promise<Player | null> {
     try {
       const { data: player, error } = await this.client
-        .from('players')
-        .select('*')
-        .eq('game_id', gameId)
-        .eq('device_id', deviceId)
+        .from(TABLE_PLAYERS)
+        .select(SELECT_ALL)
+        .eq(COLUMN_GAME_ID, gameId)
+        .eq(COLUMN_DEVICE_ID, deviceId)
         .maybeSingle();
 
       if (error) {
-        logger.error({ error, gameId, deviceId }, 'Error fetching player by device');
+        logger.error({ error, gameId, deviceId }, ERROR_MESSAGES.FETCH_PLAYER_BY_DEVICE_FAILED);
         return null;
       }
 
       return player;
     } catch (err) {
-      logger.error({ err, gameId, deviceId }, 'Exception in getPlayerByDeviceId');
+      logger.error({ err, gameId, deviceId }, LOG_MESSAGES.EXCEPTION_IN_GET_PLAYER_BY_DEVICE);
       return null;
     }
   }
 
   /**
-   * Update a player
+   * Method: updatePlayer
+   * Description:
+   * - Updates a player with provided fields
+   * - Validates player_name is not empty if provided
    *
-   * @param playerId - The player ID to update
-   * @param updates - The fields to update
-   * @returns Result object with success status and updated player or error
+   * Parameters:
+   * - playerId (string): Player ID to update
+   * - updates (UpdatePlayerInput): Fields to update
+   *
+   * Returns:
+   * - Promise<PlayerUpdateResult>: Result object with success status and updated player or error
    */
   async updatePlayer(playerId: string, updates: UpdatePlayerInput): Promise<PlayerUpdateResult> {
     try {
       if (Object.keys(updates).length === 0) {
         return {
           success: false,
-          error: 'No updates provided',
+          error: ERROR_MESSAGES.NO_UPDATES_PROVIDED,
         };
       }
 
-      // Build update object
-      const updateData: Partial<Player> = {};
-
-      if (updates.player_name !== undefined) {
-        if (!updates.player_name || updates.player_name.trim() === '') {
-          return {
-            success: false,
-            error: 'player_name cannot be empty',
-          };
-        }
-        updateData.player_name = updates.player_name.trim();
+      const updateData = this.buildUpdateData(updates);
+      if (!updateData.valid) {
+        return {
+          success: false,
+          error: updateData.error,
+        };
       }
 
-      if (updates.is_logged_in !== undefined) {
-        updateData.is_logged_in = updates.is_logged_in;
-      }
-
-      if (updates.is_host !== undefined) {
-        updateData.is_host = updates.is_host;
-      }
-
-      // Update the player
       const { data: player, error: updateError } = await this.client
-        .from('players')
-        .update(updateData)
-        .eq('id', playerId)
+        .from(TABLE_PLAYERS)
+        .update(updateData.data)
+        .eq(COLUMN_ID, playerId)
         .select()
         .single();
 
       if (updateError) {
-        logger.error({ error: updateError, playerId }, 'Error updating player');
+        logger.error({ error: updateError, playerId }, ERROR_MESSAGES.UPDATE_PLAYER_FAILED);
         return {
           success: false,
-          error: 'Failed to update player',
+          error: ERROR_MESSAGES.UPDATE_PLAYER_FAILED,
         };
       }
 
-      logger.info({ playerId, updates: updateData }, 'Player updated successfully');
+      logger.info({ playerId, updates: updateData.data }, 'Player updated successfully');
 
       return {
         success: true,
         player,
       };
     } catch (err) {
-      logger.error({ err, playerId }, 'Exception in updatePlayer');
+      logger.error({ err, playerId }, LOG_MESSAGES.EXCEPTION_IN_UPDATE_PLAYER);
       return {
         success: false,
-        error: 'Internal server error',
+        error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       };
     }
   }
 
   /**
-   * Delete a player (remove from game)
+   * Method: deletePlayer
+   * Description:
+   * - Deletes a player (remove from game)
+   * - Decrements player count for non-host players
    *
-   * @param playerId - The player ID to delete
-   * @returns Success status
+   * Parameters:
+   * - playerId (string): Player ID to delete
+   *
+   * Returns:
+   * - Promise<boolean>: Success status (true if deleted, false on error)
    */
   async deletePlayer(playerId: string): Promise<boolean> {
     try {
-      // Get game_id before deleting for player count decrement
-      const { data: player } = await this.client
-        .from('players')
-        .select('game_id')
-        .eq('id', playerId)
-        .single();
-
-      if (!player) {
-        logger.warn({ playerId }, 'Attempted to delete non-existent player');
+      const playerInfo = await this.fetchPlayerInfoForDeletion(playerId);
+      if (!playerInfo) {
         return false;
       }
 
-      // Check if player is host before deleting
-      const { data: playerData } = await this.client
-        .from('players')
-        .select('is_host')
-        .eq('id', playerId)
-        .single();
-
-      const { error } = await this.client.from('players').delete().eq('id', playerId);
+      const { error } = await this.client.from(TABLE_PLAYERS).delete().eq(COLUMN_ID, playerId);
 
       if (error) {
-        logger.error({ error, playerId }, 'Error deleting player');
+        logger.error({ error, playerId }, ERROR_MESSAGES.DELETE_PLAYER_FAILED);
         return false;
       }
 
-      // Decrement current_players count only for non-host players
-      // Hosts are not counted in the player count
-      if (!playerData?.is_host) {
-        const { error: updateError } = await this.client.rpc('decrement_game_players', {
-          p_game_id: player.game_id,
-        });
+      await this.decrementPlayerCountIfNeeded(playerInfo.game_id, playerInfo.is_host);
 
-        if (updateError) {
-          logger.warn(
-            { error: updateError, gameId: player.game_id },
-            'Failed to decrement player count',
-          );
-          // Don't fail the request, player was deleted successfully
-        }
-      }
-
-      logger.info({ playerId, gameId: player.game_id }, 'Player deleted successfully');
+      logger.info(
+        { playerId, gameId: playerInfo.game_id },
+        LOG_MESSAGES.PLAYER_DELETED_SUCCESSFULLY,
+      );
       return true;
     } catch (err) {
-      logger.error({ err, playerId }, 'Exception in deletePlayer');
+      logger.error({ err, playerId }, LOG_MESSAGES.EXCEPTION_IN_DELETE_PLAYER);
       return false;
     }
   }
 
   /**
-   * Get players with their game statistics
+   * Method: getPlayersWithStats
+   * Description:
+   * - Retrieves players with their game statistics
+   * - Joins players with game_player_data for score and answer statistics
    *
-   * @param gameId - The game ID
-   * @returns List of players with stats
+   * Parameters:
+   * - gameId (string): Game ID to fetch players for
+   *
+   * Returns:
+   * - Promise<PlayerWithStats[]>: List of players with stats, or empty array on error
    */
   async getPlayersWithStats(gameId: string): Promise<PlayerWithStats[]> {
     try {
-      // Join players with game_player_data for statistics
       const { data: playersWithStats, error } = await this.client
-        .from('players')
-        .select(
-          `
-          *,
-          game_player_data (
-            score,
-            answer_report
-          )
-        `,
-        )
-        .eq('game_id', gameId)
-        .order('created_at', { ascending: true });
+        .from(TABLE_PLAYERS)
+        .select(GAME_PLAYER_DATA_SELECT_QUERY)
+        .eq(COLUMN_GAME_ID, gameId)
+        .order(COLUMN_CREATED_AT, { ascending: true });
 
       if (error) {
-        logger.error({ error, gameId }, 'Error fetching players with stats');
+        logger.error({ error, gameId }, ERROR_MESSAGES.FETCH_PLAYERS_WITH_STATS_FAILED);
         return [];
       }
 
-      // Transform the data
-      interface PlayerStatsData {
-        id: string;
-        name: string;
-        device_id: string;
-        user_id: string | null;
-        is_host: boolean;
-        status: string;
-        game_id: string;
-        joined_at: string;
-        last_seen_at: string | null;
-        created_at: string;
-        updated_at: string;
-        game_player_data?: Array<{
-          score: number;
-          answer_report: {
-            total_answers?: number;
-            correct_answers?: number;
-          };
-        }>;
-      }
-      const result: PlayerWithStats[] = (playersWithStats || []).map((p: PlayerStatsData) => {
-        const stats = p.game_player_data?.[0] || { score: 0, answer_report: {} };
-        const answerReport = stats.answer_report || {};
-        const totalAnswers = answerReport.total_answers ?? 0;
-        const correctAnswers = answerReport.correct_answers ?? 0;
-
-        return {
-          id: p.id,
-          name: p.name,
-          player_name: p.name,
-          device_id: p.device_id,
-          user_id: p.user_id,
-          game_id: p.game_id,
-          is_host: p.is_host,
-          is_logged_in: !!p.user_id,
-          status: p.status,
-          joined_at: p.joined_at,
-          last_seen_at: p.last_seen_at,
-          created_at: p.created_at,
-          updated_at: p.updated_at,
-          score: stats.score || 0,
-          total_answers: totalAnswers,
-          correct_answers: correctAnswers,
-          accuracy: totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0,
-        };
-      });
-
-      return result;
+      return this.transformPlayersWithStats(playersWithStats || []);
     } catch (err) {
-      logger.error({ err, gameId }, 'Exception in getPlayersWithStats');
+      logger.error({ err, gameId }, LOG_MESSAGES.EXCEPTION_IN_GET_PLAYERS_WITH_STATS);
       return [];
     }
   }
+
+  /**
+   * Method: validateCreatePlayerInput
+   * Description:
+   * - Validates required fields in create player input
+   * - Returns error result if validation fails
+   *
+   * Parameters:
+   * - input (CreatePlayerInput): Input to validate
+   *
+   * Returns:
+   * - PlayerCreateResult | null: Error result if validation fails, null if valid
+   */
+  private validateCreatePlayerInput(input: CreatePlayerInput): PlayerCreateResult | null {
+    if (!input.game_id) {
+      logger.error(LOG_MESSAGES.CREATE_PLAYER_MISSING_GAME_ID);
+      return {
+        success: false,
+        error: ERROR_MESSAGES.GAME_ID_REQUIRED,
+      };
+    }
+
+    if (!input.device_id) {
+      logger.error({ gameId: input.game_id }, LOG_MESSAGES.CREATE_PLAYER_MISSING_DEVICE_ID);
+      return {
+        success: false,
+        error: ERROR_MESSAGES.DEVICE_ID_REQUIRED,
+      };
+    }
+
+    if (!input.player_name || input.player_name.trim() === '') {
+      logger.error({ gameId: input.game_id }, LOG_MESSAGES.CREATE_PLAYER_MISSING_PLAYER_NAME);
+      return {
+        success: false,
+        error: ERROR_MESSAGES.PLAYER_NAME_REQUIRED,
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Method: validateGameForPlayerJoin
+   * Description:
+   * - Validates that game exists and is accepting players
+   * - Checks game status and lock state
+   *
+   * Parameters:
+   * - gameId (string): Game ID to validate
+   *
+   * Returns:
+   * - Promise<{ valid: boolean; error?: string }>: Validation result
+   */
+  private async validateGameForPlayerJoin(
+    gameId: string,
+  ): Promise<{ valid: boolean; error?: string }> {
+    const { data: game, error: gameCheckError } = await this.client
+      .from(TABLE_GAMES)
+      .select(GAME_SELECT_FIELDS)
+      .eq(COLUMN_ID, gameId)
+      .maybeSingle();
+
+    if (gameCheckError) {
+      logger.error({ error: gameCheckError, gameId }, LOG_MESSAGES.ERROR_CHECKING_GAME_EXISTENCE);
+      return {
+        valid: false,
+        error: ERROR_MESSAGES.VERIFY_GAME_EXISTENCE_FAILED,
+      };
+    }
+
+    if (!game) {
+      logger.warn({ gameId }, LOG_MESSAGES.ATTEMPTED_JOIN_NON_EXISTENT_GAME);
+      return {
+        valid: false,
+        error: ERROR_MESSAGES.GAME_NOT_FOUND,
+      };
+    }
+
+    if (game.locked) {
+      logger.warn({ gameId }, LOG_MESSAGES.ATTEMPTED_JOIN_LOCKED_GAME);
+      return {
+        valid: false,
+        error: ERROR_MESSAGES.GAME_LOCKED,
+      };
+    }
+
+    if (game.status !== GAME_STATUS_WAITING && game.status !== GAME_STATUS_ACTIVE) {
+      logger.warn({ gameId, status: game.status }, LOG_MESSAGES.ATTEMPTED_JOIN_INVALID_STATUS);
+      return {
+        valid: false,
+        error: ERROR_MESSAGES.GAME_NOT_ACCEPTING_PLAYERS,
+      };
+    }
+
+    return { valid: true };
+  }
+
+  /**
+   * Method: checkExistingPlayer
+   * Description:
+   * - Checks if player already exists with this device_id in the game
+   * - Returns true if player exists, false otherwise
+   *
+   * Parameters:
+   * - gameId (string): Game ID
+   * - deviceId (string): Device ID
+   *
+   * Returns:
+   * - Promise<boolean>: True if player exists, false otherwise
+   */
+  private async checkExistingPlayer(gameId: string, deviceId: string): Promise<boolean> {
+    const { data: existingPlayer } = await this.client
+      .from(TABLE_PLAYERS)
+      .select(COLUMN_ID)
+      .eq(COLUMN_GAME_ID, gameId)
+      .eq(COLUMN_DEVICE_ID, deviceId)
+      .maybeSingle();
+
+    if (existingPlayer) {
+      logger.warn({ gameId, deviceId }, LOG_MESSAGES.PLAYER_ALREADY_EXISTS);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Method: insertPlayer
+   * Description:
+   * - Inserts a new player into the database
+   * - Returns created player or null on error
+   *
+   * Parameters:
+   * - input (CreatePlayerInput): Player data to insert
+   *
+   * Returns:
+   * - Promise<Player | null>: Created player or null on error
+   */
+  private async insertPlayer(input: CreatePlayerInput): Promise<Player | null> {
+    const { data: player, error: createError } = await this.client
+      .from(TABLE_PLAYERS)
+      .insert({
+        game_id: input.game_id,
+        device_id: input.device_id,
+        player_name: input.player_name.trim(),
+        is_logged_in: input.is_logged_in || false,
+        is_host: input.is_host || false,
+      })
+      .select()
+      .single();
+
+    if (createError) {
+      logger.error(
+        { error: createError, gameId: input.game_id },
+        LOG_MESSAGES.ERROR_CREATING_PLAYER,
+      );
+      return null;
+    }
+
+    return player;
+  }
+
+  /**
+   * Method: incrementPlayerCountIfNeeded
+   * Description:
+   * - Increments current_players count only for non-host players
+   * - Hosts are not counted in the player count
+   *
+   * Parameters:
+   * - gameId (string): Game ID
+   * - isHost (boolean | undefined): Whether player is host
+   */
+  private async incrementPlayerCountIfNeeded(
+    gameId: string,
+    isHost: boolean | undefined,
+  ): Promise<void> {
+    if (isHost) {
+      return;
+    }
+
+    const { error: updateError } = await this.client.rpc(RPC_INCREMENT_GAME_PLAYERS, {
+      [RPC_PARAM_GAME_ID]: gameId,
+    });
+
+    if (updateError) {
+      logger.warn({ error: updateError, gameId }, LOG_MESSAGES.FAILED_INCREMENT_PLAYER_COUNT);
+    }
+  }
+
+  /**
+   * Method: createGamePlayerDataForPlayer
+   * Description:
+   * - Automatically creates game_player_data for the player
+   * - Logs warning if creation fails but doesn't fail the request
+   *
+   * Parameters:
+   * - playerId (string): Player ID
+   * - gameId (string): Game ID
+   * - deviceId (string): Device ID
+   */
+  private async createGamePlayerDataForPlayer(
+    playerId: string,
+    gameId: string,
+    deviceId: string,
+  ): Promise<void> {
+    const gamePlayerDataResult = await gamePlayerDataService.createGamePlayerData({
+      player_id: playerId,
+      game_id: gameId,
+      player_device_id: deviceId,
+      score: INITIAL_SCORE,
+      answer_report: {
+        total_answers: INITIAL_TOTAL_ANSWERS,
+        correct_answers: INITIAL_CORRECT_ANSWERS,
+        incorrect_answers: INITIAL_INCORRECT_ANSWERS,
+        questions: [],
+      },
+    });
+
+    if (!gamePlayerDataResult.success) {
+      logger.warn(
+        {
+          error: gamePlayerDataResult.error,
+          playerId,
+          gameId,
+        },
+        LOG_MESSAGES.FAILED_CREATE_GAME_PLAYER_DATA,
+      );
+    } else {
+      logger.info({ playerId, gameId }, LOG_MESSAGES.GAME_PLAYER_DATA_CREATED);
+    }
+  }
+
+  /**
+   * Method: buildPlayersQuery
+   * Description:
+   * - Builds Supabase query for fetching players with filters
+   * - Applies is_host and is_logged_in filters if provided
+   * - Applies ordering and pagination
+   *
+   * Parameters:
+   * - gameId (string): Game ID to query players for
+   * - query (PlayerQuery): Query parameters
+   *
+   * Returns:
+   * - Query builder with all filters and pagination applied
+   */
+  private buildPlayersQuery(gameId: string, query: PlayerQuery) {
+    let queryBuilder = this.client
+      .from(TABLE_PLAYERS)
+      .select(SELECT_ALL, { count: 'exact' })
+      .eq(COLUMN_GAME_ID, gameId);
+
+    if (query.is_host !== undefined) {
+      queryBuilder = queryBuilder.eq(COLUMN_IS_HOST, query.is_host);
+    }
+
+    if (query.is_logged_in !== undefined) {
+      queryBuilder = queryBuilder.eq(COLUMN_IS_LOGGED_IN, query.is_logged_in);
+    }
+
+    queryBuilder = queryBuilder.order(COLUMN_CREATED_AT, { ascending: true });
+    queryBuilder = queryBuilder.range(query.offset, query.offset + query.limit - 1);
+
+    return queryBuilder;
+  }
+
+  /**
+   * Method: deduplicatePlayersByDeviceId
+   * Description:
+   * - Deduplicates players by device_id
+   * - Keeps only the first player (earliest created_at) for each device_id
+   * - Prevents duplicate display of players
+   *
+   * Parameters:
+   * - players (Player[]): Array of players to deduplicate
+   *
+   * Returns:
+   * - Player[]: Deduplicated array of players
+   */
+  private deduplicatePlayersByDeviceId(players: Player[]): Player[] {
+    const deviceIdMap = new Map<string, Player>();
+
+    players.forEach((player) => {
+      if (player.device_id) {
+        const existing = deviceIdMap.get(player.device_id);
+        if (!existing || new Date(player.created_at) < new Date(existing.created_at)) {
+          deviceIdMap.set(player.device_id, player);
+        }
+      } else {
+        deviceIdMap.set(player.id, player);
+      }
+    });
+
+    return Array.from(deviceIdMap.values());
+  }
+
+  /**
+   * Method: buildUpdateData
+   * Description:
+   * - Builds update data object from update input
+   * - Validates player_name is not empty if provided
+   *
+   * Parameters:
+   * - updates (UpdatePlayerInput): Update input
+   *
+   * Returns:
+   * - { valid: boolean; data?: Partial<Player>; error?: string }: Update data result
+   */
+  private buildUpdateData(updates: UpdatePlayerInput): {
+    valid: boolean;
+    data?: Partial<Player>;
+    error?: string;
+  } {
+    const updateData: Partial<Player> = {};
+
+    if (updates.player_name !== undefined) {
+      if (!updates.player_name || updates.player_name.trim() === '') {
+        return {
+          valid: false,
+          error: ERROR_MESSAGES.PLAYER_NAME_CANNOT_BE_EMPTY,
+        };
+      }
+      updateData.player_name = updates.player_name.trim();
+    }
+
+    if (updates.is_logged_in !== undefined) {
+      updateData.is_logged_in = updates.is_logged_in;
+    }
+
+    if (updates.is_host !== undefined) {
+      updateData.is_host = updates.is_host;
+    }
+
+    return { valid: true, data: updateData };
+  }
+
+  /**
+   * Method: fetchPlayerInfoForDeletion
+   * Description:
+   * - Fetches player info needed for deletion (game_id and is_host)
+   * - Returns player info or null if not found
+   *
+   * Parameters:
+   * - playerId (string): Player ID
+   *
+   * Returns:
+   * - Promise<{ game_id: string; is_host: boolean } | null>: Player info or null
+   */
+  private async fetchPlayerInfoForDeletion(
+    playerId: string,
+  ): Promise<{ game_id: string; is_host: boolean } | null> {
+    const { data: player } = await this.client
+      .from(TABLE_PLAYERS)
+      .select(`${COLUMN_GAME_ID}, ${COLUMN_IS_HOST}`)
+      .eq(COLUMN_ID, playerId)
+      .single();
+
+    if (!player) {
+      logger.warn({ playerId }, LOG_MESSAGES.ATTEMPTED_DELETE_NON_EXISTENT_PLAYER);
+      return null;
+    }
+
+    return {
+      game_id: player.game_id,
+      is_host: player.is_host || false,
+    };
+  }
+
+  /**
+   * Method: decrementPlayerCountIfNeeded
+   * Description:
+   * - Decrements current_players count only for non-host players
+   * - Hosts are not counted in the player count
+   *
+   * Parameters:
+   * - gameId (string): Game ID
+   * - isHost (boolean): Whether player is host
+   */
+  private async decrementPlayerCountIfNeeded(gameId: string, isHost: boolean): Promise<void> {
+    if (isHost) {
+      return;
+    }
+
+    const { error: updateError } = await this.client.rpc(RPC_DECREMENT_GAME_PLAYERS, {
+      [RPC_PARAM_GAME_ID]: gameId,
+    });
+
+    if (updateError) {
+      logger.warn({ error: updateError, gameId }, LOG_MESSAGES.FAILED_DECREMENT_PLAYER_COUNT);
+    }
+  }
+
+  /**
+   * Method: transformPlayersWithStats
+   * Description:
+   * - Transforms player data with statistics
+   * - Calculates accuracy from answer report
+   *
+   * Parameters:
+   * - playersWithStats (PlayerStatsData[]): Raw player data with stats
+   *
+   * Returns:
+   * - PlayerWithStats[]: Transformed players with stats
+   */
+  private transformPlayersWithStats(playersWithStats: PlayerStatsData[]): PlayerWithStats[] {
+    return playersWithStats.map((p: PlayerStatsData) => {
+      const stats = p.game_player_data?.[0] || { score: INITIAL_SCORE, answer_report: {} };
+      const answerReport = stats.answer_report || {};
+      const totalAnswers = answerReport.total_answers ?? INITIAL_TOTAL_ANSWERS;
+      const correctAnswers = answerReport.correct_answers ?? INITIAL_CORRECT_ANSWERS;
+
+      return {
+        id: p.id,
+        name: p.name,
+        player_name: p.name,
+        device_id: p.device_id,
+        user_id: p.user_id,
+        game_id: p.game_id,
+        is_host: p.is_host,
+        is_logged_in: !!p.user_id,
+        status: p.status,
+        joined_at: p.joined_at,
+        last_seen_at: p.last_seen_at,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        score: stats.score || INITIAL_SCORE,
+        total_answers: totalAnswers,
+        correct_answers: correctAnswers,
+        accuracy:
+          totalAnswers > INITIAL_TOTAL_ANSWERS
+            ? Math.round((correctAnswers / totalAnswers) * ACCURACY_PERCENTAGE_MULTIPLIER)
+            : DEFAULT_ACCURACY,
+      };
+    });
+  }
 }
 
-// Export singleton instance
+//----------------------------------------------------
+// 5. Export
+//----------------------------------------------------
 export const playerService = new PlayerService();
