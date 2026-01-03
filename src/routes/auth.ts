@@ -1,43 +1,131 @@
-// src/routes/auth.ts
+// ====================================================
+// File Name   : auth.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-08-22
+// Last Update : 2025-08-22
+
+// Description:
+// - Express router for authentication endpoints
+// - Handles user registration, login, and logout
+// - Manages Supabase Auth integration
+// - Provides user profile data with authentication responses
+
+// Notes:
+// - All endpoints are public (no auth middleware required)
+// - Uses Zod schemas for request validation
+// - Updates user last_active timestamp on login
+// - Handles session management via Supabase Auth
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import express from 'express';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import type { AuthResponse, AuthError } from '../types/auth';
 import { logger } from '../utils/logger';
 import { RegisterSchema, LoginSchema } from '../utils/validation';
 
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const HTTP_STATUS_OK = 200;
+const HTTP_STATUS_CREATED = 201;
+const HTTP_STATUS_BAD_REQUEST = 400;
+const HTTP_STATUS_UNAUTHORIZED = 401;
+const HTTP_STATUS_CONFLICT = 409;
+const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
+
+const DEFAULT_SESSION_EXPIRY_SECONDS = 3600;
+const MILLISECONDS_TO_SECONDS = 1000;
+const AUTH_HEADER_PREFIX = 'Bearer ';
+const AUTH_HEADER_PREFIX_LENGTH = AUTH_HEADER_PREFIX.length;
+
+const TABLE_PROFILES = 'profiles';
+const SELECT_PROFILE_FIELDS = 'username, display_name, role';
+const RPC_UPDATE_LAST_ACTIVE = 'update_last_active';
+
+const ENV_TEST = 'test';
+const ERROR_NAME_AUTH_SESSION_MISSING = 'AuthSessionMissingError';
+const ERROR_MESSAGE_ALREADY_REGISTERED = 'already registered';
+
+const ERROR_CODES = {
+  INVALID_PAYLOAD: 'invalid_payload',
+  DUPLICATE_EMAIL: 'duplicate_email',
+  REGISTRATION_FAILED: 'registration_failed',
+  INVALID_CREDENTIALS: 'invalid_credentials',
+  UNAUTHORIZED: 'unauthorized',
+  INTERNAL_ERROR: 'internal_error',
+} as const;
+
+const ERROR_MESSAGES = {
+  INVALID_REQUEST_DATA: 'Invalid request data',
+  ACCOUNT_ALREADY_EXISTS: 'An account with this email already exists',
+  REGISTRATION_FAILED: 'Registration failed',
+  INVALID_EMAIL_OR_PASSWORD: 'Invalid email or password',
+  NO_VALID_SESSION_TOKEN: 'No valid session token provided',
+  INTERNAL_SERVER_ERROR: 'Internal server error',
+} as const;
+
+const SUCCESS_MESSAGES = {
+  LOGGED_OUT_SUCCESSFULLY: 'Logged out successfully',
+} as const;
+
+const LOG_MESSAGES = {
+  ERROR_FETCHING_USER_PROFILE: 'Error fetching user profile',
+  SUPABASE_REGISTRATION_ERROR: 'Supabase registration error',
+  REGISTRATION_ERROR: 'Registration error',
+  ERROR_UPDATING_LAST_ACTIVE: 'Error updating last_active',
+  LOGIN_ERROR: 'Login error',
+  SESSION_ALREADY_INVALIDATED: 'Session already invalidated or missing during logout',
+  LOGOUT_ERROR: 'Logout error',
+} as const;
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
+// No additional types - using imported types
+
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
 const router = express.Router();
 
-// Helper function to get user profile data
-async function getUserProfile(userId: string) {
-  const { data: profile, error } = await supabaseAdmin
-    .from('profiles')
-    .select('username, display_name, role')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error) {
-    logger.error({ error, userId }, 'Error fetching user profile');
-    return null;
-  }
-
-  return profile;
-}
-
-// POST /auth/register
+/**
+ * Route: POST /register
+ * Description:
+ * - Register a new user account
+ * - Creates user in Supabase Auth and profile in database
+ * - Returns user data and session tokens
+ *
+ * Body:
+ * - email (string): User email address
+ * - password (string): User password
+ * - username (string, optional): Username
+ * - displayName (string, optional): Display name
+ *
+ * Returns:
+ * - 201: User registered successfully with session data
+ * - 400: Invalid request data or registration failed
+ * - 409: Email already registered
+ * - 500: Server error
+ */
 router.post('/register', async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+
   try {
-    // Validate request body
     const validation = RegisterSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({
-        error: 'invalid_payload',
-        message: 'Invalid request data',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_PAYLOAD,
+        message: ERROR_MESSAGES.INVALID_REQUEST_DATA,
+        requestId,
       } as AuthError);
     }
 
     const { email, password, username, displayName } = validation.data;
 
-    // Register user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -50,36 +138,38 @@ router.post('/register', async (req, res) => {
     });
 
     if (authError) {
-      // Log the specific Supabase error for debugging (skip in test environment to reduce noise)
-      if (process.env.NODE_ENV !== 'test') {
-        logger.error(`Supabase registration error: ${authError.message}`);
+      if (process.env.NODE_ENV !== ENV_TEST) {
+        logger.error(
+          { error: authError, requestId },
+          `${LOG_MESSAGES.SUPABASE_REGISTRATION_ERROR}: ${authError.message}`,
+        );
       }
 
-      // Handle specific Supabase errors
-      if (authError.message.includes('already registered')) {
-        return res.status(409).json({
-          error: 'duplicate_email',
-          message: 'An account with this email already exists',
+      if (authError.message.includes(ERROR_MESSAGE_ALREADY_REGISTERED)) {
+        return res.status(HTTP_STATUS_CONFLICT).json({
+          error: ERROR_CODES.DUPLICATE_EMAIL,
+          message: ERROR_MESSAGES.ACCOUNT_ALREADY_EXISTS,
+          requestId,
         } as AuthError);
       }
 
-      return res.status(400).json({
-        error: 'registration_failed',
-        message: 'Registration failed',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.REGISTRATION_FAILED,
+        message: ERROR_MESSAGES.REGISTRATION_FAILED,
+        requestId,
       } as AuthError);
     }
 
     if (!authData.user || !authData.session) {
-      return res.status(400).json({
-        error: 'registration_failed',
-        message: 'Registration failed',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.REGISTRATION_FAILED,
+        message: ERROR_MESSAGES.REGISTRATION_FAILED,
+        requestId,
       } as AuthError);
     }
 
-    // Get user profile data to ensure we have the complete information
     const profile = await getUserProfile(authData.user.id);
 
-    // Return success response
     const response: AuthResponse = {
       user: {
         id: authData.user.id,
@@ -90,68 +180,88 @@ router.post('/register', async (req, res) => {
       session: {
         access_token: authData.session.access_token,
         refresh_token: authData.session.refresh_token,
-        expires_in: authData.session.expires_in || 3600,
-        expires_at: authData.session.expires_at || Date.now() / 1000 + 3600,
+        expires_in: authData.session.expires_in || DEFAULT_SESSION_EXPIRY_SECONDS,
+        expires_at:
+          authData.session.expires_at ||
+          Date.now() / MILLISECONDS_TO_SECONDS + DEFAULT_SESSION_EXPIRY_SECONDS,
       },
     };
 
-    res.status(201).json(response);
+    return res.status(HTTP_STATUS_CREATED).json(response);
   } catch (error) {
-    logger.error({ error }, 'Registration error');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
+    logger.error({ error, requestId }, LOG_MESSAGES.REGISTRATION_ERROR);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      requestId,
     } as AuthError);
   }
 });
 
-// POST /auth/login
+/**
+ * Route: POST /login
+ * Description:
+ * - Authenticate user and create session
+ * - Updates user last_active timestamp
+ * - Returns user data and session tokens
+ *
+ * Body:
+ * - email (string): User email address
+ * - password (string): User password
+ *
+ * Returns:
+ * - 200: User logged in successfully with session data
+ * - 400: Invalid request data
+ * - 401: Invalid credentials
+ * - 500: Server error
+ */
 router.post('/login', async (req, res) => {
+  const requestId = req.headers['x-request-id'] as string;
+
   try {
-    // Validate request body
     const validation = LoginSchema.safeParse(req.body);
     if (!validation.success) {
-      return res.status(400).json({
-        error: 'invalid_payload',
-        message: 'Invalid request data',
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_PAYLOAD,
+        message: ERROR_MESSAGES.INVALID_REQUEST_DATA,
+        requestId,
       } as AuthError);
     }
 
     const { email, password } = validation.data;
 
-    // Sign in with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (authError) {
-      // Generic error message to avoid leaking information
-      return res.status(401).json({
-        error: 'invalid_credentials',
-        message: 'Invalid email or password',
+      return res.status(HTTP_STATUS_UNAUTHORIZED).json({
+        error: ERROR_CODES.INVALID_CREDENTIALS,
+        message: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD,
+        requestId,
       } as AuthError);
     }
 
     if (!authData.user || !authData.session) {
-      return res.status(401).json({
-        error: 'invalid_credentials',
-        message: 'Invalid email or password',
+      return res.status(HTTP_STATUS_UNAUTHORIZED).json({
+        error: ERROR_CODES.INVALID_CREDENTIALS,
+        message: ERROR_MESSAGES.INVALID_EMAIL_OR_PASSWORD,
+        requestId,
       } as AuthError);
     }
 
-    // Get user profile data and update last_active
     const profile = await getUserProfile(authData.user.id);
 
-    // Update last_active timestamp
     try {
-      await supabaseAdmin.rpc('update_last_active', { user_id: authData.user.id });
+      await supabaseAdmin.rpc(RPC_UPDATE_LAST_ACTIVE, { user_id: authData.user.id });
     } catch (updateError) {
-      logger.error({ error: updateError, userId: authData.user.id }, 'Error updating last_active');
-      // Don't fail the login if we can't update last_active
+      logger.error(
+        { error: updateError, userId: authData.user.id, requestId },
+        LOG_MESSAGES.ERROR_UPDATING_LAST_ACTIVE,
+      );
     }
 
-    // Return success response
     const response: AuthResponse = {
       user: {
         id: authData.user.id,
@@ -162,61 +272,117 @@ router.post('/login', async (req, res) => {
       session: {
         access_token: authData.session.access_token,
         refresh_token: authData.session.refresh_token,
-        expires_in: authData.session.expires_in || 3600,
-        expires_at: authData.session.expires_at || Date.now() / 1000 + 3600,
+        expires_in: authData.session.expires_in || DEFAULT_SESSION_EXPIRY_SECONDS,
+        expires_at:
+          authData.session.expires_at ||
+          Date.now() / MILLISECONDS_TO_SECONDS + DEFAULT_SESSION_EXPIRY_SECONDS,
       },
     };
 
-    res.status(200).json(response);
+    return res.status(HTTP_STATUS_OK).json(response);
   } catch (error) {
-    logger.error({ error }, 'Login error');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
+    logger.error({ error, requestId }, LOG_MESSAGES.LOGIN_ERROR);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      requestId,
     } as AuthError);
   }
 });
 
-// POST /auth/logout
+/**
+ * Route: POST /logout
+ * Description:
+ * - Sign out user session
+ * - Invalidates session token via Supabase Auth
+ * - Does not fail if session is already invalid
+ *
+ * Headers:
+ * - Authorization: Bearer token
+ *
+ * Returns:
+ * - 200: Logged out successfully
+ * - 401: No valid session token provided
+ * - 500: Server error
+ */
 router.post('/logout', async (req, res) => {
-  try {
-    const authHeader = req.headers.authorization;
+  const requestId = req.headers['x-request-id'] as string;
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({
-        error: 'unauthorized',
-        message: 'No valid session token provided',
+  try {
+    if (!authHeader || !authHeader.startsWith(AUTH_HEADER_PREFIX)) {
+      return res.status(HTTP_STATUS_UNAUTHORIZED).json({
+        error: ERROR_CODES.UNAUTHORIZED,
+        message: ERROR_MESSAGES.NO_VALID_SESSION_TOKEN,
+        requestId,
       } as AuthError);
     }
 
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.substring(AUTH_HEADER_PREFIX_LENGTH).trim();
 
-    // Sign out the user session using admin client
+    if (!token) {
+      return res.status(HTTP_STATUS_UNAUTHORIZED).json({
+        error: ERROR_CODES.UNAUTHORIZED,
+        message: ERROR_MESSAGES.NO_VALID_SESSION_TOKEN,
+        requestId,
+      } as AuthError);
+    }
+
     const { error: signOutError } = await supabaseAdmin.auth.admin.signOut(token);
 
     if (signOutError) {
-      // Log different levels based on error type
-      if (signOutError.name === 'AuthSessionMissingError') {
-        logger.debug(
-          { error: signOutError },
-          'Session already invalidated or missing during logout',
-        );
+      if (signOutError.name === ERROR_NAME_AUTH_SESSION_MISSING) {
+        logger.debug({ error: signOutError, requestId }, LOG_MESSAGES.SESSION_ALREADY_INVALIDATED);
       } else {
-        logger.error({ error: signOutError }, 'Logout error');
+        logger.error({ error: signOutError, requestId }, LOG_MESSAGES.LOGOUT_ERROR);
       }
-      // Don't fail the logout if Supabase signOut fails - client should clear local storage anyway
     }
 
-    res.status(200).json({
-      message: 'Logged out successfully',
+    return res.status(HTTP_STATUS_OK).json({
+      message: SUCCESS_MESSAGES.LOGGED_OUT_SUCCESSFULLY,
     });
   } catch (error) {
-    logger.error({ error }, 'Logout error');
-    res.status(500).json({
-      error: 'internal_error',
-      message: 'Internal server error',
+    logger.error({ error, requestId }, LOG_MESSAGES.LOGOUT_ERROR);
+    return res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.INTERNAL_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      requestId,
     } as AuthError);
   }
 });
 
+//----------------------------------------------------
+// 5. Helper Functions
+//----------------------------------------------------
+/**
+ * Function: getUserProfile
+ * Description:
+ * - Fetches user profile data from database
+ * - Returns null on error or if profile not found
+ *
+ * Parameters:
+ * - userId (string): User identifier
+ *
+ * Returns:
+ * - Promise<{ username: string; display_name: string; role: string } | null>:
+ *   User profile data or null if not found or error
+ */
+async function getUserProfile(userId: string) {
+  const { data: profile, error } = await supabaseAdmin
+    .from(TABLE_PROFILES)
+    .select(SELECT_PROFILE_FIELDS)
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    logger.error({ error, userId }, LOG_MESSAGES.ERROR_FETCHING_USER_PROFILE);
+    return null;
+  }
+
+  return profile;
+}
+
+//----------------------------------------------------
+// 6. Export
+//----------------------------------------------------
 export default router;
