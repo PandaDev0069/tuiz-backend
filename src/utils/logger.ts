@@ -44,13 +44,9 @@ const PRETTY_PRINT_OPTIONS = {
  * - Provides structured logging with configurable log levels
  * - Pretty printing enabled for better readability during development
  * - Colorized output with standardized timestamp formatting
+ * - Log level controlled via LOG_LEVEL environment variable
  *
- * Configuration:
- * - Log level: Controlled via LOG_LEVEL environment variable
- * - Transport: Uses pino-pretty for human-readable output
- * - Timestamp: SYS:standard format for consistent time display
- *
- * Usage:
+ * @example
  * ```typescript
  * logger.info('Application started');
  * logger.error({ error }, 'Operation failed');

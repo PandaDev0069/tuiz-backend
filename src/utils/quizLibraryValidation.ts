@@ -22,18 +22,12 @@
 //----------------------------------------------------
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+
 import { LibraryError } from '../types/quiz-library';
 import { logger } from './logger';
 
 //----------------------------------------------------
-// 2. Type Definitions
-//----------------------------------------------------
-interface RequestWithValidatedQuery extends Request {
-  validatedQuery?: Record<string, unknown>;
-}
-
-//----------------------------------------------------
-// 3. Constants / Configuration
+// 2. Constants / Configuration
 //----------------------------------------------------
 const VALID_SORT_FIELDS = [
   'updated_at',
@@ -42,13 +36,54 @@ const VALID_SORT_FIELDS = [
   'total_questions',
   'title',
 ] as const;
+
 const VALID_SORT_ORDERS = ['asc', 'desc'] as const;
+
 const MAX_ITEMS_PER_PAGE = 50;
 const MAX_TAGS = 10;
 const MAX_QUERY_LENGTH = 100;
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const DEFAULT_SORT_FIELD = 'updated_at';
+const DEFAULT_SORT_ORDER = 'desc';
+const SORT_SEPARATOR = '_';
+
+const DANGEROUS_CHARS_REGEX = /['"\\;]/g;
+const WHITESPACE_REGEX = /\s+/g;
+
+const HTTP_STATUS_BAD_REQUEST = 400;
+const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
+
+const EMPTY_STRING = '';
+
+const ERROR_CODES = {
+  INVALID_QUERY_PARAMS: 'invalid_query_params',
+  VALIDATION_ERROR: 'validation_error',
+  INVALID_QUIZ_ID: 'invalid_quiz_id',
+} as const;
+
+const ERROR_MESSAGES = {
+  INVALID_QUERY_PARAMS: 'Invalid query parameters:',
+  INTERNAL_VALIDATION_ERROR: 'Internal validation error',
+  VALID_QUIZ_ID_REQUIRED: 'Valid quiz ID is required',
+} as const;
+
+const LOG_MESSAGES = {
+  VALIDATION_FAILED: 'Quiz library validation failed',
+  VALIDATION_EXCEPTION: 'Exception in quiz library validation',
+  CLONE_VALIDATION_EXCEPTION: 'Exception in clone quiz validation',
+} as const;
+
 //----------------------------------------------------
-// 4. Validation Middleware
+// 3. Types / Interfaces
+//----------------------------------------------------
+interface RequestWithValidatedQuery extends Request {
+  validatedQuery?: Record<string, unknown>;
+}
+
+//----------------------------------------------------
+// 4. Core Logic
 //----------------------------------------------------
 /**
  * Function: validateLibraryRequest
@@ -56,12 +91,13 @@ const MAX_QUERY_LENGTH = 100;
  * - Generic Zod validation middleware factory for quiz library endpoints
  * - Validates query parameters against provided schema
  * - Attaches validated data to request object
+ * - Returns 400 status with error details if validation fails
  *
- * Parameters:
- * - schema (T): Zod schema to validate against
+ * @param schema - Zod schema to validate against
  *
- * Returns:
- * - Express middleware function
+ * @returns Express middleware function that validates query parameters
+ *
+ * @throws {LibraryError} Returns 400 status if validation fails, 500 if internal error occurs
  */
 export function validateLibraryRequest<T extends z.ZodTypeAny>(schema: T) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -78,12 +114,12 @@ export function validateLibraryRequest<T extends z.ZodTypeAny>(schema: T) {
             query: req.query,
             errors: validation.error.issues,
           },
-          'Quiz library validation failed',
+          LOG_MESSAGES.VALIDATION_FAILED,
         );
 
-        return res.status(400).json({
-          error: 'invalid_query_params',
-          message: `Invalid query parameters: ${errorMessages}`,
+        return res.status(HTTP_STATUS_BAD_REQUEST).json({
+          error: ERROR_CODES.INVALID_QUERY_PARAMS,
+          message: `${ERROR_MESSAGES.INVALID_QUERY_PARAMS} ${errorMessages}`,
         } as LibraryError);
       }
 
@@ -93,76 +129,71 @@ export function validateLibraryRequest<T extends z.ZodTypeAny>(schema: T) {
       >;
       next();
     } catch (error) {
-      logger.error({ error, query: req.query }, 'Exception in quiz library validation');
-      res.status(500).json({
-        error: 'validation_error',
-        message: 'Internal validation error',
+      logger.error({ error, query: req.query }, LOG_MESSAGES.VALIDATION_EXCEPTION);
+      res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+        error: ERROR_CODES.VALIDATION_ERROR,
+        message: ERROR_MESSAGES.INTERNAL_VALIDATION_ERROR,
       } as LibraryError);
     }
   };
 }
 
-//----------------------------------------------------
-// 5. Specific Validation Functions
-//----------------------------------------------------
 /**
  * Function: validateCloneQuizParams
  * Description:
  * - Validates quiz ID parameter for clone operations
- * - Ensures UUID format compliance
+ * - Ensures UUID format compliance using regex validation
+ * - Returns 400 status if quiz ID is missing or invalid
  *
- * Parameters:
- * - req (Request): Express request object
- * - res (Response): Express response object
- * - next (NextFunction): Express next middleware function
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next middleware function
  *
- * Returns:
- * - void
+ * @returns void (calls next() on success, sends error response on failure)
+ *
+ * @throws {LibraryError} Returns 400 status if quiz ID is invalid, 500 if internal error occurs
  */
 export function validateCloneQuizParams(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
 
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-    if (!id || !uuidRegex.test(id)) {
-      return res.status(400).json({
-        error: 'invalid_quiz_id',
-        message: 'Valid quiz ID is required',
+    if (!id || !UUID_REGEX.test(id)) {
+      return res.status(HTTP_STATUS_BAD_REQUEST).json({
+        error: ERROR_CODES.INVALID_QUIZ_ID,
+        message: ERROR_MESSAGES.VALID_QUIZ_ID_REQUIRED,
       } as LibraryError);
     }
 
     next();
   } catch (error) {
-    logger.error({ error, params: req.params }, 'Exception in clone quiz validation');
-    res.status(500).json({
-      error: 'validation_error',
-      message: 'Internal validation error',
+    logger.error({ error, params: req.params }, LOG_MESSAGES.CLONE_VALIDATION_EXCEPTION);
+    res.status(HTTP_STATUS_INTERNAL_SERVER_ERROR).json({
+      error: ERROR_CODES.VALIDATION_ERROR,
+      message: ERROR_MESSAGES.INTERNAL_VALIDATION_ERROR,
     } as LibraryError);
   }
 }
 
 //----------------------------------------------------
-// 6. Query Sanitization Helpers
+// 5. Helper Functions
 //----------------------------------------------------
 /**
  * Function: sanitizeSearchQuery
  * Description:
  * - Sanitizes user search input to prevent SQL injection
  * - Removes dangerous characters and normalizes whitespace
+ * - Limits query length to prevent excessive input (max 100 characters)
  *
- * Parameters:
- * - query (string): Raw search query from user input
+ * @param query - Raw search query from user input
  *
- * Returns:
- * - string: Sanitized search query (max 100 characters)
+ * @returns Sanitized search query (max 100 characters)
  */
 export function sanitizeSearchQuery(query: string): string {
-  if (!query) return '';
+  if (!query) return EMPTY_STRING;
 
   return query
-    .replace(/['"\\;]/g, '')
-    .replace(/\s+/g, ' ')
+    .replace(DANGEROUS_CHARS_REGEX, EMPTY_STRING)
+    .replace(WHITESPACE_REGEX, ' ')
     .trim()
     .substring(0, MAX_QUERY_LENGTH);
 }
@@ -171,13 +202,12 @@ export function sanitizeSearchQuery(query: string): string {
  * Function: sanitizeTags
  * Description:
  * - Validates and normalizes tag array from user input
- * - Filters empty strings and limits to maximum count
+ * - Filters empty strings and limits to maximum count (max 10 tags)
+ * - Converts tags to lowercase for consistency
  *
- * Parameters:
- * - tags (string[] | string | undefined): Tags from query params
+ * @param tags - Tags from query params (can be array, string, or undefined)
  *
- * Returns:
- * - string[]: Normalized tag array (max 10 tags)
+ * @returns Normalized tag array (max 10 tags)
  */
 export function sanitizeTags(tags: string[] | string | undefined): string[] {
   if (!tags) return [];
@@ -190,21 +220,18 @@ export function sanitizeTags(tags: string[] | string | undefined): string[] {
     .slice(0, MAX_TAGS);
 }
 
-//----------------------------------------------------
-// 7. Pagination Helpers
-//----------------------------------------------------
 /**
  * Function: validatePagination
  * Description:
  * - Validates and normalizes pagination parameters
  * - Enforces limits on page size and calculates offset
+ * - Ensures page and limit are positive integers
+ * - Page minimum is 1, limit maximum is MAX_ITEMS_PER_PAGE
  *
- * Parameters:
- * - page (number): Requested page number (1-indexed)
- * - limit (number): Requested items per page
+ * @param page - Requested page number (1-indexed)
+ * @param limit - Requested items per page
  *
- * Returns:
- * - Object: Validated pagination params with offset
+ * @returns Validated pagination params with offset
  */
 export function validatePagination(
   page: number,
@@ -221,30 +248,26 @@ export function validatePagination(
   };
 }
 
-//----------------------------------------------------
-// 8. Sort Validation Helpers
-//----------------------------------------------------
 /**
  * Function: validateSort
  * Description:
  * - Validates sorting field and order from user input
  * - Defaults to updated_at desc if invalid values provided
+ * - Parses sort specification in format: field_order
  *
- * Parameters:
- * - sortBy (string): Sort specification (format: field_order)
+ * @param sortBy - Sort specification (format: field_order)
  *
- * Returns:
- * - Object: Validated sort field and order
+ * @returns Validated sort field and order
  */
 export function validateSort(sortBy: string): { field: string; order: 'asc' | 'desc' } {
-  const [field, order] = sortBy.split('_');
+  const [field, order] = sortBy.split(SORT_SEPARATOR);
 
   const validField = VALID_SORT_FIELDS.includes(field as (typeof VALID_SORT_FIELDS)[number])
     ? field
-    : 'updated_at';
+    : DEFAULT_SORT_FIELD;
   const validOrder = VALID_SORT_ORDERS.includes(order as (typeof VALID_SORT_ORDERS)[number])
     ? (order as 'asc' | 'desc')
-    : 'desc';
+    : DEFAULT_SORT_ORDER;
 
   return { field: validField, order: validOrder };
 }
