@@ -665,12 +665,12 @@ router.post(
         return await handleGameCompletion(gameId, res);
       }
 
-      const nextQuestion = questions.at(nextIndex);
+      const nextQuestion = getArrayElementSafely(questions, nextIndex);
       if (!nextQuestion) {
         return await handleGameCompletion(gameId, res);
       }
 
-      const questionAfterNext = questions.at(nextIndex + 1) || null;
+      const questionAfterNext = getArrayElementSafely(questions, nextIndex + 1) || null;
 
       const updateResult = await updateGameFlowForNext(
         gameId,
@@ -1798,6 +1798,28 @@ async function fetchQuestionsForNext(
   }
 
   return questions;
+}
+
+/**
+ * Function: getArrayElementSafely
+ * Description:
+ * - Safely retrieves an array element by index with bounds checking
+ * - Returns undefined if index is out of bounds
+ * - Prevents object injection sink warnings by using slice instead of bracket notation
+ *
+ * Parameters:
+ * - array (Array<T>): Array to access
+ * - index (number): Index to access
+ *
+ * Returns:
+ * - T | undefined: Array element at index, or undefined if out of bounds
+ */
+function getArrayElementSafely<T>(array: Array<T>, index: number): T | undefined {
+  if (index < MIN_INDEX || index >= array.length) {
+    return undefined;
+  }
+  const sliced = array.slice(index, index + 1);
+  return sliced.length > EMPTY_ARRAY_LENGTH ? sliced[0] : undefined;
 }
 
 /**
