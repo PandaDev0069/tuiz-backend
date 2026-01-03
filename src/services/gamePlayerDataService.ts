@@ -412,130 +412,80 @@ export class GamePlayerDataService {
     answer: SubmitAnswerInput,
   ): Promise<GamePlayerDataUpdateResult> {
     try {
-      const validationResult = await this.validateGameAndQuestion(gameId, answer.question_id);
-      if (!validationResult.success) {
-        return validationResult;
+      const contextResult = await this.validateAnswerContext(gameId, answer.question_id);
+      if (!contextResult.success) {
+        return contextResult;
       }
+      const context = contextResult as {
+        success: true;
+        game: GameData;
+        question: QuestionData;
+        playSettings: PlaySettings;
+        correctAnswer: { id: string };
+      };
 
-      if (!('game' in validationResult) || !('question' in validationResult)) {
-        return {
-          success: false,
-          error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
-        };
-      }
-
-      const { game, question } = validationResult;
-
-      const playSettings = await this.fetchPlaySettings(game.quiz_set_id);
-      const correctAnswerResult = await this.fetchCorrectAnswer(question.id);
-      if (!correctAnswerResult.success) {
-        return correctAnswerResult;
-      }
-
-      if (!('correctAnswer' in correctAnswerResult)) {
-        return {
-          success: false,
-          error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
-        };
-      }
-
-      const { correctAnswer } = correctAnswerResult;
-
-      const isCorrect = answer.answer_id === correctAnswer.id;
-      const timeTakenSeconds = Math.max(MIN_TIME_TAKEN_SECONDS, answer.time_taken);
-      const answeringTime = question.answering_time || DEFAULT_ANSWERING_TIME_SECONDS;
-      const answeredInTime = timeTakenSeconds <= answeringTime;
-      const maxSubmissionTime = answeringTime * TIME_TOLERANCE_MULTIPLIER;
-      if (timeTakenSeconds > maxSubmissionTime) {
-        logger.warn(
-          { timeTaken: timeTakenSeconds, answeringTime, gameId, playerId },
-          LOG_MESSAGES.ANSWER_SUBMISSION_LATE,
-        );
-      }
-
-      const playerDataResult = await this.ensurePlayerDataExists(playerId, gameId);
-      if (!playerDataResult.success) {
-        return playerDataResult;
-      }
-
-      if (!('data' in playerDataResult) || !playerDataResult.data) {
-        return {
-          success: false,
-          error: ERROR_MESSAGES.PLAYER_DATA_NOT_FOUND,
-        };
-      }
-
-      const currentData = playerDataResult.data;
-      const answerReport: AnswerReport = currentData.answer_report as AnswerReport;
-
-      const validationCheck = await this.validateAnswerSubmission(
-        answerReport,
-        answer.question_id,
-        gameId,
-      );
-      if (!validationCheck.success) {
-        return validationCheck;
-      }
-
-      const previousStreak = this.calculateCurrentStreak(answerReport.questions);
-      const newStreak = isCorrect && answeredInTime ? previousStreak + 1 : 0;
-      const basePoints = question.points || DEFAULT_BASE_POINTS;
-      const computedPoints = this.calculatePoints(
-        isCorrect,
-        answeredInTime,
-        basePoints,
-        answeringTime,
-        timeTakenSeconds,
-        newStreak,
-        playSettings,
-      );
-
-      const updatedReport = this.updateAnswerReport(
-        answerReport,
-        answer,
-        isCorrect,
-        timeTakenSeconds,
-        computedPoints,
-        newStreak,
-      );
-
-      const newScore = currentData.score + computedPoints;
-      const newRank = await this.calculateRank(gameId, newScore);
-      this.updateRankTracking(
-        updatedReport,
-        answerReport,
-        newRank,
-        newScore,
-        answer.question_number,
-      );
-
-      const updateResult = await this.savePlayerDataUpdate(
+      const answerProcessingResult = await this.processAnswerSubmission(
         playerId,
         gameId,
-        newScore,
-        updatedReport,
+        answer,
+        context,
       );
-      if (!updateResult.success) {
-        return updateResult;
+      if (!answerProcessingResult.success) {
+        return answerProcessingResult;
       }
+      const processedAnswer = answerProcessingResult as {
+        success: true;
+        currentData: GamePlayerData;
+        answerReport: AnswerReport;
+        isCorrect: boolean;
+        timeTakenSeconds: number;
+        answeredInTime: boolean;
+        answeringTime: number;
+      };
 
-      const answerStats = await this.aggregateAnswerStats(gameId, answer.question_id);
+      const scoringResult = await this.calculateAnswerScore(processedAnswer, context, answer);
+      if (!scoringResult.success) {
+        return scoringResult;
+      }
+      const scoring = scoringResult as {
+        success: true;
+        updatedReport: AnswerReport;
+        computedPoints: number;
+        newScore: number;
+        newRank: number;
+        isCorrect: boolean;
+      };
+
+      const persistenceResult = await this.persistAnswerSubmission(
+        playerId,
+        gameId,
+        answer,
+        scoring,
+      );
+      if (!persistenceResult.success) {
+        return persistenceResult;
+      }
+      const persisted = persistenceResult as {
+        success: true;
+        data: GamePlayerData;
+        answerStats: Record<string, number>;
+      };
 
       logger.info(
         {
           playerId,
           gameId,
           questionId: answer.question_id,
-          isCorrect,
-          newScore,
+          isCorrect: scoring.isCorrect,
+          newScore: scoring.newScore,
         },
         LOG_MESSAGES.ANSWER_SUBMITTED_SUCCESSFULLY,
       );
 
       return {
         success: true,
-        data: updateResult.data,
-        answerStats,
+        data: persisted.data,
+        answerStats: persisted.answerStats,
       };
     } catch (err) {
       logger.error({ err, playerId, gameId }, LOG_MESSAGES.EXCEPTION_IN_SUBMIT_ANSWER);
@@ -865,6 +815,315 @@ export class GamePlayerDataService {
   //----------------------------------------------------
   // 5. Helper Functions
   //----------------------------------------------------
+
+  /**
+   * Method: validateAnswerContext
+   * Description:
+   * - Validates game and question existence
+   * - Fetches play settings and correct answer
+   * - Returns all context data needed for answer processing
+   *
+   * Parameters:
+   * - gameId (string): The game ID
+   * - questionId (string): The question ID
+   *
+   * Returns:
+   * - Promise<GamePlayerDataUpdateResult | { success: true; game: GameData; question: QuestionData; playSettings: PlaySettings; correctAnswer: { id: string } }>:
+   *   Error result or success with all context data
+   */
+  private async validateAnswerContext(
+    gameId: string,
+    questionId: string,
+  ): Promise<
+    | GamePlayerDataUpdateResult
+    | {
+        success: true;
+        game: GameData;
+        question: QuestionData;
+        playSettings: PlaySettings;
+        correctAnswer: { id: string };
+      }
+  > {
+    const validationResult = await this.validateGameAndQuestion(gameId, questionId);
+    if (!validationResult.success) {
+      return validationResult;
+    }
+
+    if (!('game' in validationResult) || !('question' in validationResult)) {
+      return {
+        success: false,
+        error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      };
+    }
+
+    const { game, question } = validationResult;
+
+    const playSettings = await this.fetchPlaySettings(game.quiz_set_id);
+    const correctAnswerResult = await this.fetchCorrectAnswer(question.id);
+    if (!correctAnswerResult.success) {
+      return correctAnswerResult;
+    }
+
+    if (!('correctAnswer' in correctAnswerResult)) {
+      return {
+        success: false,
+        error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
+      };
+    }
+
+    return {
+      success: true,
+      game,
+      question,
+      playSettings,
+      correctAnswer: correctAnswerResult.correctAnswer,
+    };
+  }
+
+  /**
+   * Method: processAnswerSubmission
+   * Description:
+   * - Processes answer submission (correctness, timing validation)
+   * - Ensures player data exists
+   * - Validates answer submission eligibility
+   *
+   * Parameters:
+   * - playerId (string): The player ID
+   * - gameId (string): The game ID
+   * - answer (SubmitAnswerInput): The answer submission data
+   * - context: Context data from validateAnswerContext
+   *
+   * Returns:
+   * - Promise<GamePlayerDataUpdateResult | { success: true; currentData: GamePlayerData; answerReport: AnswerReport; isCorrect: boolean; timeTakenSeconds: number; answeredInTime: boolean; answeringTime: number }>:
+   *   Error result or success with processed answer data
+   */
+  private async processAnswerSubmission(
+    playerId: string,
+    gameId: string,
+    answer: SubmitAnswerInput,
+    context: {
+      game: GameData;
+      question: QuestionData;
+      playSettings: PlaySettings;
+      correctAnswer: { id: string };
+    },
+  ): Promise<
+    | GamePlayerDataUpdateResult
+    | {
+        success: true;
+        currentData: GamePlayerData;
+        answerReport: AnswerReport;
+        isCorrect: boolean;
+        timeTakenSeconds: number;
+        answeredInTime: boolean;
+        answeringTime: number;
+      }
+  > {
+    const { question, correctAnswer } = context;
+
+    const isCorrect = answer.answer_id === correctAnswer.id;
+    const timeTakenSeconds = Math.max(MIN_TIME_TAKEN_SECONDS, answer.time_taken);
+    const answeringTime = question.answering_time || DEFAULT_ANSWERING_TIME_SECONDS;
+    const answeredInTime = timeTakenSeconds <= answeringTime;
+    const maxSubmissionTime = answeringTime * TIME_TOLERANCE_MULTIPLIER;
+
+    if (timeTakenSeconds > maxSubmissionTime) {
+      logger.warn(
+        { timeTaken: timeTakenSeconds, answeringTime, gameId, playerId },
+        LOG_MESSAGES.ANSWER_SUBMISSION_LATE,
+      );
+    }
+
+    const playerDataResult = await this.ensurePlayerDataExists(playerId, gameId);
+    if (!playerDataResult.success) {
+      return playerDataResult;
+    }
+
+    if (!('data' in playerDataResult) || !playerDataResult.data) {
+      return {
+        success: false,
+        error: ERROR_MESSAGES.PLAYER_DATA_NOT_FOUND,
+      };
+    }
+
+    const currentData = playerDataResult.data;
+    const answerReport: AnswerReport = currentData.answer_report as AnswerReport;
+
+    const validationCheck = await this.validateAnswerSubmission(
+      answerReport,
+      answer.question_id,
+      gameId,
+    );
+    if (!validationCheck.success) {
+      return validationCheck;
+    }
+
+    return {
+      success: true,
+      currentData,
+      answerReport,
+      isCorrect,
+      timeTakenSeconds,
+      answeredInTime,
+      answeringTime,
+    };
+  }
+
+  /**
+   * Method: calculateAnswerScore
+   * Description:
+   * - Calculates streak and points for the answer
+   * - Updates answer report with new answer and statistics
+   *
+   * Parameters:
+   * - answerProcessingResult: Result from processAnswerSubmission
+   * - context: Context data from validateAnswerContext
+   * - answer (SubmitAnswerInput): The answer submission data
+   *
+   * Returns:
+   * - Promise<GamePlayerDataUpdateResult | { success: true; updatedReport: AnswerReport; computedPoints: number; newScore: number; newRank: number; isCorrect: boolean }>:
+   *   Error result or success with scoring data
+   */
+  private async calculateAnswerScore(
+    answerProcessingResult: {
+      currentData: GamePlayerData;
+      answerReport: AnswerReport;
+      isCorrect: boolean;
+      timeTakenSeconds: number;
+      answeredInTime: boolean;
+      answeringTime: number;
+    },
+    context: {
+      question: QuestionData;
+      playSettings: PlaySettings;
+    },
+    answer: SubmitAnswerInput,
+  ): Promise<
+    | GamePlayerDataUpdateResult
+    | {
+        success: true;
+        updatedReport: AnswerReport;
+        computedPoints: number;
+        newScore: number;
+        newRank: number;
+        isCorrect: boolean;
+      }
+  > {
+    const {
+      currentData,
+      answerReport,
+      isCorrect,
+      timeTakenSeconds,
+      answeredInTime,
+      answeringTime,
+    } = answerProcessingResult;
+    const { question, playSettings } = context;
+
+    const previousStreak = this.calculateCurrentStreak(answerReport.questions);
+    const newStreak =
+      isCorrect && answeredInTime ? previousStreak + RANK_OFFSET : INITIAL_TOTAL_ANSWERS;
+    const basePoints = question.points || DEFAULT_BASE_POINTS;
+
+    const computedPoints = this.calculatePoints(
+      isCorrect,
+      answeredInTime,
+      basePoints,
+      answeringTime,
+      timeTakenSeconds,
+      newStreak,
+      playSettings,
+    );
+
+    const updatedReport = this.updateAnswerReport(
+      answerReport,
+      answer,
+      isCorrect,
+      timeTakenSeconds,
+      computedPoints,
+      newStreak,
+    );
+
+    const newScore = currentData.score + computedPoints;
+    const newRank = await this.calculateRank(currentData.game_id, newScore);
+
+    return {
+      success: true,
+      updatedReport,
+      computedPoints,
+      newScore,
+      newRank,
+      isCorrect,
+    };
+  }
+
+  /**
+   * Method: persistAnswerSubmission
+   * Description:
+   * - Updates rank tracking in answer report
+   * - Saves player data update to database
+   * - Aggregates answer statistics for all players
+   *
+   * Parameters:
+   * - playerId (string): The player ID
+   * - gameId (string): The game ID
+   * - answer (SubmitAnswerInput): The answer submission data
+   * - scoringResult: Result from calculateAnswerScore
+   *
+   * Returns:
+   * - Promise<GamePlayerDataUpdateResult | { success: true; data: GamePlayerData; answerStats: Record<string, number> }>:
+   *   Error result or success with persisted data and statistics
+   */
+  private async persistAnswerSubmission(
+    playerId: string,
+    gameId: string,
+    answer: SubmitAnswerInput,
+    scoringResult: {
+      updatedReport: AnswerReport;
+      newScore: number;
+      newRank: number;
+    },
+  ): Promise<
+    | GamePlayerDataUpdateResult
+    | {
+        success: true;
+        data: GamePlayerData;
+        answerStats: Record<string, number>;
+      }
+  > {
+    const previousReport = await this.getGamePlayerData(playerId, gameId);
+    const previousAnswerReport = (previousReport?.answer_report as AnswerReport) || {
+      total_answers: INITIAL_TOTAL_ANSWERS,
+      correct_answers: INITIAL_CORRECT_ANSWERS,
+      incorrect_answers: INITIAL_INCORRECT_ANSWERS,
+      questions: [],
+    };
+
+    this.updateRankTracking(
+      scoringResult.updatedReport,
+      previousAnswerReport,
+      scoringResult.newRank,
+      scoringResult.newScore,
+      answer.question_number,
+    );
+
+    const updateResult = await this.savePlayerDataUpdate(
+      playerId,
+      gameId,
+      scoringResult.newScore,
+      scoringResult.updatedReport,
+    );
+    if (!updateResult.success) {
+      return updateResult;
+    }
+
+    const answerStats = await this.aggregateAnswerStats(gameId, answer.question_id);
+
+    return {
+      success: true,
+      data: updateResult.data!,
+      answerStats,
+    };
+  }
 
   /**
    * Function: validateGameAndQuestion
