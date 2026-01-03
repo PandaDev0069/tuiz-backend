@@ -1,5 +1,36 @@
-// src/services/websocket/types.ts
+// ====================================================
+// File Name   : types.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-11-23
+// Last Update : 2025-12-30
 
+// Description:
+// - Type definitions for WebSocket connections and events
+// - Defines client connection structures and event signatures
+// - Provides type safety for Socket.IO event handlers
+
+// Notes:
+// - WebSocketEvents defines client-to-server events
+// - ServerEvents defines server-to-client events
+// - All interfaces are exported for use across the WebSocket service
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
+// No external imports - pure type definitions
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
+/**
+ * Interface: ClientConnection
+ * Description:
+ * - Represents an active WebSocket client connection
+ * - Tracks connection metadata, heartbeat, and reconnection history
+ * - Used for in-memory connection management
+ */
 export interface ClientConnection {
   socketId: string;
   deviceId: string;
@@ -8,38 +39,55 @@ export interface ClientConnection {
   lastHeartbeat: Date;
   reconnectCount: number;
   metadata?: Record<string, unknown>;
-  connectionId?: string; // Database ID for the connection
+  connectionId?: string;
 }
 
+/**
+ * Interface: ConnectionInfo
+ * Description:
+ * - Information required to establish a WebSocket connection
+ * - Sent by client during initial connection handshake
+ * - Contains device and user identification
+ */
 export interface ConnectionInfo {
   deviceId: string;
   userId?: string;
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * Interface: GameRoom
+ * Description:
+ * - Represents a game room with connected clients
+ * - Tracks room state and game data
+ * - Used for room-based message broadcasting
+ */
 export interface GameRoom {
   roomId: string;
-  clients: Set<string>; // socket IDs
+  clients: Set<string>;
   createdAt: Date;
   gameData?: Record<string, unknown>;
 }
 
+/**
+ * Interface: WebSocketEvents
+ * Description:
+ * - Defines all client-to-server WebSocket events
+ * - Maps event names to their handler function signatures
+ * - Used for type-safe Socket.IO event handling
+ */
 export interface WebSocketEvents {
-  // Connection events
   'ws:connect': (data: ConnectionInfo) => void;
   'ws:disconnect': () => void;
   'ws:heartbeat': () => void;
 
-  // Room events
   'room:join': (data: { roomId: string }) => void;
   'room:leave': (data: { roomId: string }) => void;
   'room:message': (data: { roomId: string; message: unknown }) => void;
 
-  // Game events (extensible for future game development)
   'game:action': (data: { roomId: string; action: string; payload: unknown }) => void;
   'game:state': (data: { roomId: string; state: unknown }) => void;
 
-  // Game flow
   'game:flow:start': (data: {
     roomId: string;
     questionId: string;
@@ -50,7 +98,6 @@ export interface WebSocketEvents {
   'game:flow:next': (data: { roomId: string; nextQuestionId: string }) => void;
   'game:flow:end': (data: { roomId: string }) => void;
 
-  // Aligned question events (direct from host)
   'game:question:started': (data: {
     roomId: string;
     question: { id: string; index?: number };
@@ -59,10 +106,8 @@ export interface WebSocketEvents {
   }) => void;
   'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
 
-  // Phase change broadcast
   'game:phase:change': (data: { roomId: string; phase: string; startedAt?: number }) => void;
 
-  // Game lifecycle
   'game:started': (data: {
     roomId?: string;
     gameId?: string;
@@ -70,7 +115,6 @@ export interface WebSocketEvents {
     startedAt?: number;
   }) => void;
 
-  // Answers
   'game:answer:submit': (data: {
     roomId: string;
     playerId: string;
@@ -78,12 +122,17 @@ export interface WebSocketEvents {
     answer: string | number;
   }) => void;
 
-  // Leaderboard
   'game:leaderboard:request': (data: { roomId: string }) => void;
 }
 
+/**
+ * Interface: ServerEvents
+ * Description:
+ * - Defines all server-to-client WebSocket events
+ * - Maps event names to their payload data structures
+ * - Used for type-safe Socket.IO event emission
+ */
 export interface ServerEvents {
-  // Connection responses
   'ws:connected': (data: {
     socketId: string;
     deviceId: string;
@@ -93,7 +142,6 @@ export interface ServerEvents {
   'ws:error': (data: { error: string; message: string }) => void;
   'ws:pong': () => void;
 
-  // Room responses
   'room:joined': (data: { roomId: string; clients: number }) => void;
   'room:left': (data: { roomId: string }) => void;
   'room:message': (data: {
@@ -105,7 +153,6 @@ export interface ServerEvents {
   'room:user-joined': (data: { roomId: string; socketId: string }) => void;
   'room:user-left': (data: { roomId: string; socketId: string }) => void;
 
-  // Game responses
   'game:action': (data: {
     roomId: string;
     from: string;
@@ -115,7 +162,6 @@ export interface ServerEvents {
   }) => void;
   'game:state': (data: { roomId: string; state: unknown }) => void;
 
-  // Game flow broadcasts
   'game:question:started': (data: {
     roomId: string;
     question: { id: string; index?: number };
@@ -125,10 +171,8 @@ export interface ServerEvents {
   'game:question:changed': (data: { roomId: string; question: { id: string } }) => void;
   'game:question:ended': (data: { roomId: string; questionId?: string }) => void;
 
-  // Phase change broadcast
   'game:phase:change': (data: { roomId: string; phase: string; startedAt?: number }) => void;
 
-  // Game lifecycle
   'game:started': (data: {
     roomId?: string;
     gameId?: string;
@@ -136,7 +180,6 @@ export interface ServerEvents {
     startedAt?: number;
   }) => void;
 
-  // Answer responses/broadcasts
   'game:answer:accepted': (data: {
     roomId: string;
     playerId: string;
@@ -159,7 +202,6 @@ export interface ServerEvents {
     counts?: Record<string, number>;
   }) => void;
 
-  // Leaderboard
   'game:leaderboard:update': (data: {
     roomId: string;
     rankings?: Array<{ playerId: string; score: number; rank: number }>;
@@ -182,7 +224,6 @@ export interface ServerEvents {
     };
   }) => void;
 
-  // Explanation
   'game:explanation:show': (data: {
     roomId: string;
     questionId: string;
@@ -195,7 +236,6 @@ export interface ServerEvents {
   }) => void;
   'game:explanation:hide': (data: { roomId: string; questionId: string }) => void;
 
-  // Player management
   'game:player-kicked': (data: {
     player_id: string;
     player_name: string;
