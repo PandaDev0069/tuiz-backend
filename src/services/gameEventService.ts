@@ -1,4 +1,24 @@
-// src/services/gameEventService.ts
+// ====================================================
+// File Name   : gameEventService.ts
+// Project     : TUIZ v2
+// Author      : Panda
+// Created     : 2025-12-11
+// Last Update : 2025-12-11
+
+// Description:
+// - Service class for managing game event operations.
+// - Handles event logging, retrieval, replay functionality, and event deletion.
+// - Provides comprehensive game event tracking for analytics and replay features.
+
+// Notes:
+// - Automatically determines sequence numbers for events
+// - Validates game existence before creating events
+// - Provides pagination and filtering for event queries
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '../lib/supabase';
 import {
@@ -10,6 +30,26 @@ import {
 } from '../types/gameEvent';
 import { logger } from '../utils/logger';
 
+//----------------------------------------------------
+// 2. Constants / Configuration
+//----------------------------------------------------
+const INITIAL_SEQUENCE_NUMBER = 0;
+const LAST_EVENT_QUERY_LIMIT = 1;
+const MILLISECONDS_PER_SECOND = 1000;
+
+const ERROR_MESSAGES = {
+  GAME_ID_REQUIRED: 'game_id is required',
+  EVENT_TYPE_REQUIRED: 'event_type is required',
+  ACTION_REQUIRED: 'action is required',
+  VERIFY_GAME_EXISTENCE_FAILED: 'Failed to verify game existence',
+  GAME_NOT_FOUND: 'Game not found',
+  CREATE_EVENT_FAILED: 'Failed to create game event',
+  INTERNAL_SERVER_ERROR: 'Internal server error',
+} as const;
+
+//----------------------------------------------------
+// 3. Types / Interfaces
+//----------------------------------------------------
 /**
  * Result of game event creation operation
  */
@@ -19,6 +59,9 @@ export interface GameEventCreateResult {
   error?: string;
 }
 
+//----------------------------------------------------
+// 4. Core Logic
+//----------------------------------------------------
 /**
  * Service class for managing game event operations
  * Handles event logging, retrieval, and replay functionality
@@ -31,20 +74,25 @@ export class GameEventService {
   }
 
   /**
-   * Log a new game event
-   * Automatically determines sequence number based on existing events
+   * Method: createGameEvent
+   * Description:
+   * - Log a new game event to the database
+   * - Automatically determines sequence number based on existing events
+   * - Validates game existence before creating event
    *
-   * @param input - The game event data
-   * @returns Result object with success status and created event or error
+   * Parameters:
+   * - input (CreateGameEventInput): The game event data including game_id, event_type, action, etc.
+   *
+   * Returns:
+   * - Promise<GameEventCreateResult>: Result object with success status and created event or error
    */
   async createGameEvent(input: CreateGameEventInput): Promise<GameEventCreateResult> {
     try {
-      // Validate required fields
       if (!input.game_id) {
         logger.error('createGameEvent called with missing game_id');
         return {
           success: false,
-          error: 'game_id is required',
+          error: ERROR_MESSAGES.GAME_ID_REQUIRED,
         };
       }
 
@@ -52,7 +100,7 @@ export class GameEventService {
         logger.error({ gameId: input.game_id }, 'createGameEvent called with missing event_type');
         return {
           success: false,
-          error: 'event_type is required',
+          error: ERROR_MESSAGES.EVENT_TYPE_REQUIRED,
         };
       }
 
@@ -60,11 +108,10 @@ export class GameEventService {
         logger.error({ gameId: input.game_id }, 'createGameEvent called with missing action');
         return {
           success: false,
-          error: 'action is required',
+          error: ERROR_MESSAGES.ACTION_REQUIRED,
         };
       }
 
-      // Verify that the game exists
       const { data: gameExists, error: gameCheckError } = await this.client
         .from('games')
         .select('id')
@@ -78,7 +125,7 @@ export class GameEventService {
         );
         return {
           success: false,
-          error: 'Failed to verify game existence',
+          error: ERROR_MESSAGES.VERIFY_GAME_EXISTENCE_FAILED,
         };
       }
 
@@ -86,11 +133,10 @@ export class GameEventService {
         logger.warn({ gameId: input.game_id }, 'Attempted to create event for non-existent game');
         return {
           success: false,
-          error: 'Game not found',
+          error: ERROR_MESSAGES.GAME_NOT_FOUND,
         };
       }
 
-      // Get next sequence number if not provided
       let sequenceNumber = input.sequence_number;
       if (sequenceNumber === undefined) {
         const { data: lastEvent } = await this.client
@@ -98,13 +144,12 @@ export class GameEventService {
           .select('sequence_number')
           .eq('game_id', input.game_id)
           .order('sequence_number', { ascending: false })
-          .limit(1)
+          .limit(LAST_EVENT_QUERY_LIMIT)
           .maybeSingle();
 
-        sequenceNumber = lastEvent ? lastEvent.sequence_number + 1 : 0;
+        sequenceNumber = lastEvent ? lastEvent.sequence_number + 1 : INITIAL_SEQUENCE_NUMBER;
       }
 
-      // Create the game event
       const { data: event, error: createError } = await this.client
         .from('game_events')
         .insert({
@@ -125,7 +170,7 @@ export class GameEventService {
         logger.error({ error: createError, gameId: input.game_id }, 'Error creating game event');
         return {
           success: false,
-          error: 'Failed to create game event',
+          error: ERROR_MESSAGES.CREATE_EVENT_FAILED,
         };
       }
 
@@ -147,17 +192,24 @@ export class GameEventService {
       logger.error({ err, gameId: input.game_id }, 'Exception in createGameEvent');
       return {
         success: false,
-        error: 'Internal server error',
+        error: ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
       };
     }
   }
 
   /**
-   * Get game events with filtering and pagination
+   * Method: getGameEvents
+   * Description:
+   * - Get game events with filtering and pagination
+   * - Supports filtering by event_type and player_id
+   * - Provides ordering and pagination capabilities
    *
-   * @param gameId - The game ID to fetch events for
-   * @param query - Query parameters for filtering and pagination
-   * @returns List of game events with metadata
+   * Parameters:
+   * - gameId (string): The game ID to fetch events for
+   * - query (GameEventQuery): Query parameters for filtering and pagination
+   *
+   * Returns:
+   * - Promise<GameEventsResponse | null>: List of game events with metadata, or null on error
    */
   async getGameEvents(gameId: string, query: GameEventQuery): Promise<GameEventsResponse | null> {
     try {
@@ -166,7 +218,6 @@ export class GameEventService {
         .select('*', { count: 'exact' })
         .eq('game_id', gameId);
 
-      // Apply filters
       if (query.event_type) {
         queryBuilder = queryBuilder.eq('event_type', query.event_type);
       }
@@ -175,12 +226,10 @@ export class GameEventService {
         queryBuilder = queryBuilder.eq('player_id', query.player_id);
       }
 
-      // Apply ordering
       queryBuilder = queryBuilder.order('sequence_number', {
         ascending: query.order === 'asc',
       });
 
-      // Apply pagination
       queryBuilder = queryBuilder.range(query.offset, query.offset + query.limit - 1);
 
       const { data: events, error, count } = await queryBuilder;
@@ -204,15 +253,20 @@ export class GameEventService {
   }
 
   /**
-   * Get complete game replay data
-   * Includes all events and game statistics for replay functionality
+   * Method: getGameReplay
+   * Description:
+   * - Get complete game replay data for a finished game
+   * - Includes all events ordered by sequence number
+   * - Provides game statistics and metadata for replay functionality
    *
-   * @param gameId - The game ID to fetch replay data for
-   * @returns Complete replay data or null
+   * Parameters:
+   * - gameId (string): The game ID to fetch replay data for
+   *
+   * Returns:
+   * - Promise<GameReplay | null>: Complete replay data with events and statistics, or null on error
    */
   async getGameReplay(gameId: string): Promise<GameReplay | null> {
     try {
-      // Fetch all events ordered by sequence
       const { data: events, error: eventsError } = await this.client
         .from('game_events')
         .select('*')
@@ -224,7 +278,6 @@ export class GameEventService {
         return null;
       }
 
-      // Fetch game info
       const { data: game, error: gameError } = await this.client
         .from('games')
         .select('quiz_set_id, status, started_at, ended_at, current_question_index')
@@ -236,25 +289,22 @@ export class GameEventService {
         return null;
       }
 
-      // Fetch game flow for total questions
       const { data: gameFlow } = await this.client
         .from('game_flows')
         .select('total_questions')
         .eq('game_id', gameId)
         .maybeSingle();
 
-      // Count unique players
       const { count: playerCount } = await this.client
         .from('players')
         .select('id', { count: 'exact', head: true })
         .eq('game_id', gameId);
 
-      // Calculate duration
       let durationSeconds: number | null = null;
       if (game.started_at && game.ended_at) {
         const start = new Date(game.started_at);
         const end = new Date(game.ended_at);
-        durationSeconds = Math.floor((end.getTime() - start.getTime()) / 1000);
+        durationSeconds = Math.floor((end.getTime() - start.getTime()) / MILLISECONDS_PER_SECOND);
       }
 
       return {
@@ -280,11 +330,17 @@ export class GameEventService {
   }
 
   /**
-   * Delete all events for a game
-   * Typically called when a game is deleted (CASCADE handles this automatically)
+   * Method: deleteGameEvents
+   * Description:
+   * - Delete all events for a game
+   * - Typically called when a game is deleted (CASCADE handles this automatically)
+   * - Used for manual cleanup or testing purposes
    *
-   * @param gameId - The game ID to delete events for
-   * @returns Success status
+   * Parameters:
+   * - gameId (string): The game ID to delete events for
+   *
+   * Returns:
+   * - Promise<boolean>: Success status (true if deleted, false on error)
    */
   async deleteGameEvents(gameId: string): Promise<boolean> {
     try {
@@ -304,5 +360,7 @@ export class GameEventService {
   }
 }
 
-// Export singleton instance
+//----------------------------------------------------
+// 5. Export
+//----------------------------------------------------
 export const gameEventService = new GameEventService();
