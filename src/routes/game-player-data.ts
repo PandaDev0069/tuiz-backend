@@ -1,4 +1,26 @@
-// src/routes/game-player-data.ts
+// ====================================================
+// File Name   : game-player-data.ts
+// Project     : TUIZ
+// Author      : PandaDev0069 / Panta Aashish
+// Created     : 2025-12-11
+// Last Update : 2026-01-03
+
+// Description:
+// - Express router for game player data management endpoints
+// - Handles CRUD operations for player data in games
+// - Manages answer submissions and leaderboard retrieval
+// - Provides endpoints for player statistics and data updates
+
+// Notes:
+// - Some endpoints are public (no auth required) for player access
+// - Protected endpoints require authentication via authMiddleware
+// - Uses Zod schemas for request validation
+// - Broadcasts WebSocket events for real-time answer statistics
+// ====================================================
+
+//----------------------------------------------------
+// 1. Imports / Dependencies
+//----------------------------------------------------
 import express from 'express';
 import { ZodError } from 'zod';
 
