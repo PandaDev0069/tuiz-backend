@@ -21,6 +21,7 @@
 // 1. Imports / Dependencies
 //----------------------------------------------------
 import express from 'express';
+
 import { corsMw } from './config/cors';
 import { authMiddleware } from './middleware/auth';
 import { errorMw } from './middleware/error';
@@ -81,9 +82,10 @@ const ROUTE_PATHS = {
  * Description:
  * - Creates and configures Express application
  * - Sets up middleware, routes, and error handling
+ * - Configures CORS, JSON parsing, and all API routes
+ * - Implements 404 handler and centralized error handling
  *
- * Returns:
- * - express.Application: Configured Express application instance
+ * @returns Configured Express application instance
  */
 export function createApp() {
   const app = express();

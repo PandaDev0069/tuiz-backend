@@ -47,6 +47,13 @@ const ERROR_MESSAGES = {
 //----------------------------------------------------
 // 3. Core Logic
 //----------------------------------------------------
+/**
+ * Schema: RegisterSchema
+ * Description:
+ * - Validation schema for user registration
+ * - Validates email, password, and optional username/displayName
+ * - Enforces password minimum length and username format constraints
+ */
 export const RegisterSchema = z.object({
   email: z.string().email(ERROR_MESSAGES.INVALID_EMAIL_FORMAT),
   password: z.string().min(PASSWORD_MIN_LENGTH, ERROR_MESSAGES.PASSWORD_MIN_LENGTH),
@@ -63,11 +70,31 @@ export const RegisterSchema = z.object({
     .optional(),
 });
 
+/**
+ * Schema: LoginSchema
+ * Description:
+ * - Validation schema for user login
+ * - Validates email and password
+ * - Includes optional rememberMe flag for session persistence
+ */
 export const LoginSchema = z.object({
   email: z.string().email(ERROR_MESSAGES.INVALID_EMAIL_FORMAT),
   password: z.string().min(PASSWORD_REQUIRED_MIN_LENGTH, ERROR_MESSAGES.PASSWORD_REQUIRED),
   rememberMe: z.boolean().optional(),
 });
 
+/**
+ * Type: RegisterData
+ * Description:
+ * - Inferred type from RegisterSchema
+ * - Represents validated registration data structure
+ */
 export type RegisterData = z.infer<typeof RegisterSchema>;
+
+/**
+ * Type: LoginData
+ * Description:
+ * - Inferred type from LoginSchema
+ * - Represents validated login data structure
+ */
 export type LoginData = z.infer<typeof LoginSchema>;

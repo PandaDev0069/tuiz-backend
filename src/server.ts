@@ -22,6 +22,7 @@
 //----------------------------------------------------
 import http from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+
 import { createApp } from './app';
 import { env, isProd, getAllowedOrigins } from './config/env';
 import { WebSocketEvents, ServerEvents, initializeWebSocketManager } from './services/websocket';
@@ -59,6 +60,8 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as con
 
 const ALLOWED_CORS_HEADERS = ['Content-Type', 'Authorization', 'X-Requested-With'] as const;
 
+const NODE_ENV_PRODUCTION = 'production';
+
 const ERROR_MESSAGES = {
   INVALID_PROTOCOL: 'Invalid protocol',
   ORIGIN_NOT_ALLOWED: 'Origin not allowed by CORS policy',
@@ -86,7 +89,7 @@ const io = new SocketIOServer<WebSocketEvents, ServerEvents>(server, {
 
       const allowed = getAllowedOrigins();
 
-      if (process.env.NODE_ENV !== 'production') {
+      if (process.env.NODE_ENV !== NODE_ENV_PRODUCTION) {
         const host = hostnameOf(origin);
 
         if ((LOCALHOST_PATTERNS as readonly string[]).includes(host)) {
@@ -133,12 +136,11 @@ server.listen(env.PORT, SERVER_HOST, () => {
  * Description:
  * - Extracts and validates hostname from origin URL
  * - Validates protocol is http or https
+ * - Returns empty string if URL is invalid or protocol is not allowed
  *
- * Parameters:
- * - origin (string): The origin URL to parse
+ * @param origin - The origin URL to parse
  *
- * Returns:
- * - string: Lowercase hostname or empty string if invalid
+ * @returns Lowercase hostname or empty string if invalid
  */
 function hostnameOf(origin: string): string {
   try {
@@ -157,15 +159,14 @@ function hostnameOf(origin: string): string {
  * Function: originAllowed
  * Description:
  * - Validates if origin is allowed based on allowed list
- * - Checks for suspicious patterns
- * - Supports wildcard domains and URL prefixes
+ * - Checks for suspicious patterns before validation
+ * - Supports wildcard domains (*.example.com) and URL prefixes (https://example.com/*)
+ * - Blocks wildcard origins in production environment
  *
- * Parameters:
- * - origin (string): The origin to validate
- * - allowedList (string[]): List of allowed origin patterns
+ * @param origin - The origin to validate
+ * @param allowedList - List of allowed origin patterns
  *
- * Returns:
- * - boolean: true if origin is allowed, false otherwise
+ * @returns true if origin is allowed, false otherwise
  */
 function originAllowed(origin: string, allowedList: string[]): boolean {
   if (SUSPICIOUS_ORIGIN_PATTERNS.some((p) => p.test(origin))) {
