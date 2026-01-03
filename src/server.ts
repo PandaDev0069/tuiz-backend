@@ -163,46 +163,181 @@ function hostnameOf(origin: string): string {
  * - Supports wildcard domains (*.example.com) and URL prefixes (https://example.com/*)
  * - Blocks wildcard origins in production environment
  *
- * @param origin - The origin to validate
- * @param allowedList - List of allowed origin patterns
+ * Parameters:
+ * - origin (string): The origin to validate
+ * - allowedList (string[]): List of allowed origin patterns
  *
- * @returns true if origin is allowed, false otherwise
+ * Returns:
+ * - boolean: True if origin is allowed, false otherwise
  */
 function originAllowed(origin: string, allowedList: string[]): boolean {
-  if (SUSPICIOUS_ORIGIN_PATTERNS.some((p) => p.test(origin))) {
-    logger.warn(LOG_MESSAGES.SUSPICIOUS_ORIGIN_PATTERN(origin));
+  if (hasSuspiciousPattern(origin)) {
     return false;
   }
 
   const host = hostnameOf(origin);
-  if (!host) return false;
+  if (!host) {
+    return false;
+  }
 
   for (const allowed of allowedList) {
-    if (!allowed) continue;
+    if (!allowed) {
+      continue;
+    }
 
-    if (allowed === WILDCARD_ORIGIN) {
-      if (isProd) {
-        logger.error(ERROR_MESSAGES.WILDCARD_NOT_ALLOWED_IN_PRODUCTION);
-        return false;
-      }
-      logger.warn(LOG_MESSAGES.WILDCARD_ALLOWED_NON_PROD);
+    if (matchesWildcardOrigin(allowed)) {
+      return handleWildcardOrigin();
+    }
+
+    if (matchesExactUrl(origin, allowed)) {
       return true;
     }
 
-    if (/^https?:\/\//i.test(allowed) && origin === allowed) return true;
-
-    if (!allowed.includes(WILDCARD_ORIGIN) && host === hostnameOf(allowed)) return true;
-
-    if (allowed.startsWith(WILDCARD_DOMAIN_PREFIX)) {
-      const domain = allowed.slice(DOMAIN_PREFIX_SLICE_OFFSET);
-      if (host === domain || host.endsWith('.' + domain)) return true;
+    if (matchesExactHostname(host, allowed)) {
+      return true;
     }
 
-    if (allowed.endsWith(WILDCARD_URL_SUFFIX) && /^https?:\/\//i.test(allowed)) {
-      const prefix = allowed.slice(URL_SUFFIX_SLICE_OFFSET);
-      if (origin.startsWith(prefix)) return true;
+    if (matchesWildcardDomain(host, allowed)) {
+      return true;
+    }
+
+    if (matchesWildcardUrlPrefix(origin, allowed)) {
+      return true;
     }
   }
 
   return false;
+}
+
+/**
+ * Function: hasSuspiciousPattern
+ * Description:
+ * - Checks if origin contains suspicious patterns
+ * - Logs warning if suspicious pattern is detected
+ *
+ * Parameters:
+ * - origin (string): The origin to check
+ *
+ * Returns:
+ * - boolean: True if suspicious pattern found, false otherwise
+ */
+function hasSuspiciousPattern(origin: string): boolean {
+  const hasSuspicious = SUSPICIOUS_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+  if (hasSuspicious) {
+    logger.warn(LOG_MESSAGES.SUSPICIOUS_ORIGIN_PATTERN(origin));
+  }
+  return hasSuspicious;
+}
+
+/**
+ * Function: matchesWildcardOrigin
+ * Description:
+ * - Checks if allowed pattern is a wildcard origin (*)
+ *
+ * Parameters:
+ * - allowed (string): Allowed pattern to check
+ *
+ * Returns:
+ * - boolean: True if wildcard origin, false otherwise
+ */
+function matchesWildcardOrigin(allowed: string): boolean {
+  return allowed === WILDCARD_ORIGIN;
+}
+
+/**
+ * Function: handleWildcardOrigin
+ * Description:
+ * - Handles wildcard origin validation
+ * - Blocks wildcard in production, allows in non-production
+ *
+ * Returns:
+ * - boolean: True if allowed, false if blocked
+ */
+function handleWildcardOrigin(): boolean {
+  if (isProd) {
+    logger.error(ERROR_MESSAGES.WILDCARD_NOT_ALLOWED_IN_PRODUCTION);
+    return false;
+  }
+  logger.warn(LOG_MESSAGES.WILDCARD_ALLOWED_NON_PROD);
+  return true;
+}
+
+/**
+ * Function: matchesExactUrl
+ * Description:
+ * - Checks if origin exactly matches allowed URL pattern
+ *
+ * Parameters:
+ * - origin (string): Origin to check
+ * - allowed (string): Allowed pattern to match against
+ *
+ * Returns:
+ * - boolean: True if exact match, false otherwise
+ */
+function matchesExactUrl(origin: string, allowed: string): boolean {
+  const isUrlPattern = /^https?:\/\//i.test(allowed);
+  return isUrlPattern && origin === allowed;
+}
+
+/**
+ * Function: matchesExactHostname
+ * Description:
+ * - Checks if origin hostname exactly matches allowed hostname
+ *
+ * Parameters:
+ * - host (string): Hostname from origin
+ * - allowed (string): Allowed pattern to match against
+ *
+ * Returns:
+ * - boolean: True if hostname matches, false otherwise
+ */
+function matchesExactHostname(host: string, allowed: string): boolean {
+  const hasNoWildcard = !allowed.includes(WILDCARD_ORIGIN);
+  const allowedHost = hostnameOf(allowed);
+  return hasNoWildcard && host === allowedHost;
+}
+
+/**
+ * Function: matchesWildcardDomain
+ * Description:
+ * - Checks if origin matches wildcard domain pattern (*.example.com)
+ *
+ * Parameters:
+ * - host (string): Hostname from origin
+ * - allowed (string): Allowed pattern to match against
+ *
+ * Returns:
+ * - boolean: True if matches wildcard domain, false otherwise
+ */
+function matchesWildcardDomain(host: string, allowed: string): boolean {
+  if (!allowed.startsWith(WILDCARD_DOMAIN_PREFIX)) {
+    return false;
+  }
+
+  const domain = allowed.slice(DOMAIN_PREFIX_SLICE_OFFSET);
+  return host === domain || host.endsWith('.' + domain);
+}
+
+/**
+ * Function: matchesWildcardUrlPrefix
+ * Description:
+ * - Checks if origin matches wildcard URL prefix pattern (https://example.com/*)
+ *
+ * Parameters:
+ * - origin (string): Origin to check
+ * - allowed (string): Allowed pattern to match against
+ *
+ * Returns:
+ * - boolean: True if matches URL prefix, false otherwise
+ */
+function matchesWildcardUrlPrefix(origin: string, allowed: string): boolean {
+  const isUrlPattern = /^https?:\/\//i.test(allowed);
+  const hasWildcardSuffix = allowed.endsWith(WILDCARD_URL_SUFFIX);
+
+  if (!isUrlPattern || !hasWildcardSuffix) {
+    return false;
+  }
+
+  const prefix = allowed.slice(URL_SUFFIX_SLICE_OFFSET);
+  return origin.startsWith(prefix);
 }
